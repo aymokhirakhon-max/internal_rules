@@ -63,6 +63,103 @@ function compareSections(a, b){
 }
 
 // New Comparative Table Component
+// Enhanced DiffBlock for Comparative Table
+function ComparativeDiffBlock({ before, after, showFull = false }) {
+  const beforeText = before ? before.replace(/<[^>]*>?/gm, '') : '';
+  const afterText = after ? after.replace(/<[^>]*>?/gm, '') : '';
+  
+  // Debug logging - remove in production
+  console.log('ComparativeDiffBlock:', { 
+    beforeText: beforeText.substring(0, 100), 
+    afterText: afterText.substring(0, 100),
+    hasData: !!beforeText || !!afterText 
+  });
+  
+  const parts = Diff.diffWords(beforeText, afterText);
+  const hasChanges = parts.some(p => p.added || p.removed);
+  
+  // Show "No content" only if both are completely empty
+  if (!beforeText && !afterText) {
+    return <span style={{color: '#6c757d', fontStyle: 'italic'}}>No content</span>;
+  }
+  
+  // If no changes detected, show current content with indicator
+  if (!hasChanges) {
+    const displayText = afterText || beforeText;
+    const truncatedText = showFull ? displayText : (displayText.substring(0, 150) + (displayText.length > 150 ? '...' : ''));
+    return (
+      <div style={{lineHeight: '1.5'}}>
+        <span style={{
+          color: '#495057',
+          backgroundColor: '#f8f9fa',
+          padding: '2px 4px',
+          borderRadius: '3px',
+          fontSize: '11px',
+          marginRight: '6px'
+        }}>
+          UNCHANGED
+        </span>
+        <span style={{color: '#495057'}}>{truncatedText}</span>
+      </div>
+    );
+  }
+  
+  // Show diff with changes
+  return (
+    <div style={{lineHeight: '1.5'}}>
+      <div style={{marginBottom: '4px'}}>
+        <span style={{
+          color: '#28a745',
+          backgroundColor: '#d1e7dd',
+          padding: '1px 4px',
+          borderRadius: '3px',
+          fontSize: '10px',
+          marginRight: '4px'
+        }}>
+          CHANGES DETECTED
+        </span>
+      </div>
+      {parts.map((p, i) => {
+        if (p.added) {
+          return (
+            <span key={i} style={{
+              backgroundColor: '#d1e7dd',
+              color: '#0a3622',
+              fontWeight: 'bold',
+              padding: '2px 4px',
+              borderRadius: '3px',
+              margin: '0 1px',
+              display: 'inline-block'
+            }}>
+              ✅ {p.value}
+            </span>
+          );
+        } else if (p.removed) {
+          return (
+            <span key={i} style={{
+              backgroundColor: '#f8d7da',
+              color: '#721c24',
+              fontWeight: 'bold',
+              padding: '2px 4px',
+              borderRadius: '3px',
+              margin: '0 1px',
+              textDecoration: 'line-through',
+              display: 'inline-block'
+            }}>
+              ❌ {p.value}
+            </span>
+          );
+        } else {
+          const displayText = showFull ? p.value : (p.value.length > 100 ? p.value.substring(0, 100) + '...' : p.value);
+          return <span key={i} style={{color: '#495057', wordBreak: 'break-word'}}>{displayText}</span>;
+        }
+      })}
+    </div>
+  );
+}
+
+
+
 function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
   const [localComments, setLocalComments] = useState(comments)
   
@@ -88,6 +185,22 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
     return comments.length > 0 ? comments[comments.length - 1].comment : ''
   }
   
+  const getRowStatus = (row) => {
+    if (!row.before && row.after) return 'added';
+    if (row.before && !row.after) return 'removed';
+    if (row.before && row.after && row.before !== row.after) return 'changed';
+    return 'unchanged';
+  }
+  
+  const getStatusStyle = (status) => {
+    switch(status) {
+      case 'added': return {color: '#28a745', fontWeight: 'bold', backgroundColor: '#d1e7dd', padding: '2px 6px', borderRadius: '8px', fontSize: '11px'};
+      case 'removed': return {color: '#dc3545', fontWeight: 'bold', backgroundColor: '#f8d7da', padding: '2px 6px', borderRadius: '8px', fontSize: '11px'};
+      case 'changed': return {color: '#ffc107', fontWeight: 'bold', backgroundColor: '#fff3cd', padding: '2px 6px', borderRadius: '8px', fontSize: '11px'};
+      default: return {color: '#6c757d', fontWeight: 'normal', fontSize: '11px'};
+    }
+  }
+  
   if (!oldVersion || !newVersion) {
     return (
       <div className="panel">
@@ -100,6 +213,19 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
   
   const comparisonData = compareSections(oldVersion.sections, newVersion.sections)
   
+  // Debug logging
+  console.log('ComparativeTable Data:', {
+    oldVersion: oldVersion?.sections?.slice(0, 2),
+    newVersion: newVersion?.sections?.slice(0, 2),
+    comparisonData: comparisonData.slice(0, 3)
+  });
+  
+  // Calculate summary statistics
+  const summary = comparisonData.reduce((acc, row) => {
+    acc[row.status] = (acc[row.status] || 0) + 1;
+    return acc;
+  }, {});
+
   return (
     <div style={{ 
       position: 'fixed',
@@ -117,7 +243,7 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
         display: 'flex', 
         justifyContent: 'space-between', 
         alignItems: 'center',
-        marginBottom: '30px',
+        marginBottom: '20px',
         borderBottom: '1px solid #e0e0e0',
         paddingBottom: '20px'
       }}>
@@ -127,7 +253,7 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
           color: '#333',
           margin: 0
         }}>
-          Comparative Table (Old vs New Version)
+          📊 Enhanced Comparative Table (Old vs New Version)
         </h1>
         <button 
           onClick={onClose} 
@@ -143,6 +269,70 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
         >
           Close
         </button>
+      </div>
+      
+      {/* Summary */}
+      <div style={{
+        backgroundColor: '#f8f9fa',
+        padding: '15px',
+        borderRadius: '8px',
+        marginBottom: '20px',
+        border: '1px solid #e9ecef'
+      }}>
+        <h3 style={{margin: '0 0 10px 0', fontSize: '16px', color: '#333'}}>📋 Changes Summary</h3>
+        <div style={{display: 'flex', gap: '15px', flexWrap: 'wrap'}}>
+          {summary.added > 0 && (
+            <span style={{
+              backgroundColor: '#d1e7dd',
+              color: '#0a3622',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '13px',
+              fontWeight: '500'
+            }}>
+              ✅ {summary.added} Added
+            </span>
+          )}
+          {summary.changed > 0 && (
+            <span style={{
+              backgroundColor: '#fff3cd',
+              color: '#856404',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '13px',
+              fontWeight: '500'
+            }}>
+              📝 {summary.changed} Modified
+            </span>
+          )}
+          {summary.removed > 0 && (
+            <span style={{
+              backgroundColor: '#f8d7da',
+              color: '#721c24',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '13px',
+              fontWeight: '500'
+            }}>
+              ❌ {summary.removed} Removed
+            </span>
+          )}
+          {summary.unchanged > 0 && (
+            <span style={{
+              backgroundColor: '#e9ecef',
+              color: '#6c757d',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '13px',
+              fontWeight: '500'
+            }}>
+              ⚪ {summary.unchanged} Unchanged
+            </span>
+          )}
+        </div>
+        {Object.keys(summary).length === 0 && (
+          <span style={{color: '#6c757d', fontStyle: 'italic'}}>No sections to compare</span>
+        )}
       </div>
       
       {/* Table */}
@@ -193,7 +383,7 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
                 color: '#495057',
                 fontSize: '14px'
               }}>
-                New Version
+                New Version (Enhanced)
               </th>
               <th style={{ 
                 border: '1px solid #dee2e6', 
@@ -210,8 +400,13 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
           </thead>
           <tbody>
             {comparisonData.map((row, index) => {
+              const status = getRowStatus(row);
               return (
-                <tr key={row.section} style={{ backgroundColor: 'white' }}>
+                <tr key={row.section} style={{ 
+                  backgroundColor: status === 'changed' ? '#fffbe6' : 
+                                status === 'added' ? '#e8f5e8' : 
+                                status === 'removed' ? '#ffe8e8' : 'white'
+                }}>
                   <td style={{ 
                     border: '1px solid #dee2e6', 
                     padding: '16px 12px',
@@ -219,13 +414,19 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
                     fontWeight: '500',
                     color: '#212529'
                   }}>
-                    {row.section}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>{row.section}</span>
+                      <span style={getStatusStyle(status)}>
+                        {status.toUpperCase()}
+                      </span>
+                    </div>
                   </td>
                   <td style={{ 
                     border: '1px solid #dee2e6', 
                     padding: '16px 12px',
                     verticalAlign: 'top',
-                    position: 'relative'
+                    position: 'relative',
+                    backgroundColor: '#f8f9fa'
                   }}>
                     <div style={{ 
                       fontSize: '13px',
@@ -233,20 +434,24 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
                       color: '#495057'
                     }}>
                       {row.before ? (
-                        <div>{row.before.replace(/<[^>]*>?/gm, '').substring(0, 100) + (row.before.length > 100 ? '...' : '')}</div>
+                        <div style={{ opacity: 0.8 }}>
+                          {row.before.replace(/<[^>]*>?/gm, '').substring(0, 100) + (row.before.length > 100 ? '...' : '')}
+                        </div>
                       ) : (
                         <span style={{ color: '#6c757d', fontStyle: 'italic' }}>No content</span>
                       )}
                     </div>
-                    {row.before && (
-                      <span style={{ 
-                        position: 'absolute',
-                        top: '12px',
-                        right: '12px',
-                        fontSize: '12px',
-                        color: '#6c757d'
-                      }}>🔒</span>
-                    )}
+                    <span style={{ 
+                      position: 'absolute',
+                      top: '12px',
+                      right: '12px',
+                      fontSize: '10px',
+                      color: '#6c757d',
+                      backgroundColor: 'white',
+                      padding: '2px 4px',
+                      borderRadius: '3px',
+                      border: '1px solid #dee2e6'
+                    }}>🔒 READ-ONLY</span>
                   </td>
                   <td style={{ 
                     border: '1px solid #dee2e6', 
@@ -255,14 +460,13 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
                   }}>
                     <div style={{ 
                       fontSize: '13px',
-                      lineHeight: '1.5',
-                      color: '#495057'
+                      lineHeight: '1.5'
                     }}>
-                      {row.after ? (
-                        <div>{row.after.replace(/<[^>]*>?/gm, '').substring(0, 100) + (row.after.length > 100 ? '...' : '')}</div>
-                      ) : (
-                        <span style={{ color: '#6c757d', fontStyle: 'italic' }}>No content</span>
-                      )}
+                      <ComparativeDiffBlock 
+                        before={row.before} 
+                        after={row.after} 
+                        showFull={true}
+                      />
                     </div>
                   </td>
                   <td style={{ 
