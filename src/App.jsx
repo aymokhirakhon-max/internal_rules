@@ -1558,29 +1558,60 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
     return `${major}.${minor}.`;
   }
   
+  function shouldExcludeSection(sectionKey) {
+    const excludedSections = [
+      'I. ABBREVIATIONS',
+      'ABBREVIATIONS',
+      'II. DOCUMENT IDENTIFICATION',
+      'DOCUMENT IDENTIFICATION',
+      'III. DEFINITION OF BUSINESS ACTIVITY',
+      'DEFINITION OF BUSINESS ACTIVITY',
+      'IV. ASSOCIATED INTERNAL RULES AND EXTERNAL REGULATIONS',
+      'ASSOCIATED INTERNAL RULES AND EXTERNAL REGULATIONS',
+      'V. REVISION HISTORY OF DOCUMENT VERSION',
+      'REVISION HISTORY OF DOCUMENT VERSION',
+      'Table of Content',
+      'TABLE OF CONTENT',
+      'Table of Contents',
+      'TABLE OF CONTENTS'
+    ];
+    
+    const key = sectionKey.toUpperCase();
+    return excludedSections.some(excluded => 
+      key.includes(excluded.toUpperCase()) || 
+      key.startsWith('I.') || 
+      key.startsWith('II.') ||
+      key.startsWith('III.') ||
+      key.startsWith('IV.') ||
+      key.startsWith('V.') ||
+      key.includes('ABBREVIATION') ||
+      key.includes('TABLE OF CONTENT') ||
+      key.includes('DOCUMENT IDENTIFICATION') ||
+      key.includes('DEFINITION OF BUSINESS ACTIVITY') ||
+      key.includes('ASSOCIATED INTERNAL RULES') ||
+      key.includes('REVISION HISTORY')
+    );
+  }
+  
   function insertNumberingIntoSection(sectionKey, index) {
     const latest = d.versions[d.versions.length-1];
     
-    // Count how many articles already exist in Introduction sections
+    // Count how many articles already exist across ALL sections
     let articleCount = 0;
-    for (let i = 0; i <= index; i++) {
-      const section = latest.sections[i];
-      if (section && section.key.toLowerCase().includes('introduction')) {
-        // Count existing numbered articles in this section
-        const text = section.text || '';
-        const numberMatches = text.match(/<strong[^>]*>1\.\d+\.<\/strong>/g) || [];
-        articleCount += numberMatches.length;
-      }
-    }
+    latest.sections.forEach(section => {
+      const text = section.text || '';
+      const numberMatches = text.match(/<strong[^>]*>1\.\d+\.<\/strong>/g) || [];
+      articleCount += numberMatches.length;
+    });
     
     const nextNumber = `1.${articleCount + 1}.`;
     const numberingHtml = `<p><strong style="color: #007bff;">${nextNumber}</strong> </p>`;
     
     const sections = latest.sections.map(s => {
       if (s.key === sectionKey) {
-        // If section is empty, just add numbering, otherwise prepend it
+        // Always append the new numbering to the existing content
         const currentText = s.text || '';
-        const newText = currentText.trim() === '' ? numberingHtml : numberingHtml + currentText;
+        const newText = currentText + numberingHtml;
         return { ...s, text: newText };
       }
       return s;
@@ -1593,14 +1624,12 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
     const latest = d.versions[d.versions.length-1]
     const existingSections = latest.sections || []
     
-    // Count total articles across all Introduction sections
+    // Count total articles across all sections
     let totalArticles = 0;
     existingSections.forEach(section => {
-      if (section.key.toLowerCase().includes('introduction')) {
-        const text = section.text || '';
-        const numberMatches = text.match(/<strong[^>]*>1\.\d+\.<\/strong>/g) || [];
-        totalArticles += numberMatches.length;
-      }
+      const text = section.text || '';
+      const numberMatches = text.match(/<strong[^>]*>1\.\d+\.<\/strong>/g) || [];
+      totalArticles += numberMatches.length;
     });
     
     const nextNumber = `1.${totalArticles + 1}.`;
@@ -1884,8 +1913,8 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
                     <span>{(section.text||'').replace(/<[^>]*>?/gm, '').length} characters</span>
                   </div>
                   
-                  {/* Add numbering and article buttons only after Introduction section */}
-                  {section.key.toLowerCase().includes('introduction') && (
+                  {/* Add numbering and article buttons after each chapter, excluding ABBREVIATIONS to Table of Content */}
+                  {!shouldExcludeSection(section.key) && (
                     <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e9ecef', textAlign: 'center' }}>
                       <button 
                         onClick={() => insertNumberingIntoSection(section.key, index)}
@@ -1902,15 +1931,13 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
                         }}
                       >
                         📝 Add {(() => {
-                          // Calculate next article number
+                          // Calculate next article number across all sections
                           const latest = d.versions[d.versions.length-1];
                           let totalArticles = 0;
                           latest.sections.forEach(s => {
-                            if (s.key.toLowerCase().includes('introduction')) {
-                              const text = s.text || '';
-                              const matches = text.match(/<strong[^>]*>1\.\d+\.<\/strong>/g) || [];
-                              totalArticles += matches.length;
-                            }
+                            const text = s.text || '';
+                            const matches = text.match(/<strong[^>]*>1\.\d+\.<\/strong>/g) || [];
+                            totalArticles += matches.length;
                           });
                           return `1.${totalArticles + 1}.`;
                         })()}
