@@ -47,6 +47,7 @@ th{ background:#f8fafc; font-size:13px; color:var(--muted); font-weight:600; }
 .pill{ padding:2px 8px; border-radius:999px; border:1px solid var(--border); background:#fff; font-size:12px; margin-right:6px; display:inline-block; }
 .toolbar{ display:flex; gap:8px; justify-content:flex-end; }
 .sticky-footer{ position: sticky; bottom: 0; background:#fff; border-top:1px solid var(--border); padding:12px; display:flex; gap:8px; justify-content:flex-end; }
-.diff-add{ background:#dcfce7; border-radius:4px; padding:0 2px; }
+.diff-add{ background:#dcfce7; border-radius:4px; padding:0 2px; color:#166534; font-weight:bold; }
+.diff-remove{ background:#fecaca; border-radius:4px; padding:0 2px; color:#dc2626; font-weight:bold; text-decoration:line-through; }
 .diff-remove{ background:#fee2e2; border-radius:4px; text-decoration: line-through; padding:0 2px; }
 .empty{ color: var(--muted); text-align: center; padding: 32px 0; }

@@ -1558,6 +1558,12 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
     return `${major}.${minor}.`;
   }
   
+  function getChapterNumber(sectionKey) {
+    // Extract chapter number from section key (e.g., "2. Chapter II" -> 2, "3. Something" -> 3)
+    const match = sectionKey.match(/^(\d+)\./)
+    return match ? parseInt(match[1]) : 1 // Default to 1 if no number found
+  }
+  
   function shouldExcludeSection(sectionKey) {
     const excludedSections = [
       'I. ABBREVIATIONS',
@@ -1595,16 +1601,17 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
   
   function insertNumberingIntoSection(sectionKey, index) {
     const latest = d.versions[d.versions.length-1];
+    const chapterNum = getChapterNumber(sectionKey);
     
-    // Count how many articles already exist across ALL sections
+    // Count how many articles already exist for this specific chapter number
     let articleCount = 0;
     latest.sections.forEach(section => {
       const text = section.text || '';
-      const numberMatches = text.match(/<strong[^>]*>1\.\d+\.<\/strong>/g) || [];
+      const numberMatches = text.match(new RegExp(`<strong[^>]*>${chapterNum}\\.\\d+\\.<\/strong>`, 'g')) || [];
       articleCount += numberMatches.length;
     });
     
-    const nextNumber = `1.${articleCount + 1}.`;
+    const nextNumber = `${chapterNum}.${articleCount + 1}.`;
     const numberingHtml = `<p><strong style="color: #007bff;">${nextNumber}</strong> </p>`;
     
     const sections = latest.sections.map(s => {
@@ -1623,16 +1630,18 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
   function addArticle(afterIndex){
     const latest = d.versions[d.versions.length-1]
     const existingSections = latest.sections || []
+    const currentSection = existingSections[afterIndex]
+    const chapterNum = getChapterNumber(currentSection.key)
     
-    // Count total articles across all sections
+    // Count total articles for this specific chapter number
     let totalArticles = 0;
     existingSections.forEach(section => {
       const text = section.text || '';
-      const numberMatches = text.match(/<strong[^>]*>1\.\d+\.<\/strong>/g) || [];
+      const numberMatches = text.match(new RegExp(`<strong[^>]*>${chapterNum}\\.\\d+\\.<\/strong>`, 'g')) || [];
       totalArticles += numberMatches.length;
     });
     
-    const nextNumber = `1.${totalArticles + 1}.`;
+    const nextNumber = `${chapterNum}.${totalArticles + 1}.`;
     const newSection = { key: 'Article', text: `<p><strong style="color: #007bff;">${nextNumber}</strong> </p>` }
     const sections = [...existingSections]
     sections.splice(afterIndex + 1, 0, newSection)
@@ -1931,15 +1940,16 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
                         }}
                       >
                         📝 Add {(() => {
-                          // Calculate next article number across all sections
+                          // Calculate next article number for this chapter
                           const latest = d.versions[d.versions.length-1];
+                          const chapterNum = getChapterNumber(section.key);
                           let totalArticles = 0;
                           latest.sections.forEach(s => {
                             const text = s.text || '';
-                            const matches = text.match(/<strong[^>]*>1\.\d+\.<\/strong>/g) || [];
+                            const matches = text.match(new RegExp(`<strong[^>]*>${chapterNum}\\.\\d+\\.<\/strong>`, 'g')) || [];
                             totalArticles += matches.length;
                           });
-                          return `1.${totalArticles + 1}.`;
+                          return `${chapterNum}.${totalArticles + 1}.`;
                         })()}
                       </button>
                       <button 
@@ -2002,11 +2012,51 @@ function TagEditor({ value, onChange }){
 
 function DiffBlock({ before, after }){
   const parts = Diff.diffWords(before||'', after||'')
+  const hasChanges = parts.some(p => p.added || p.removed)
+  
   return (
-    <div style={{lineHeight:'1.6'}}>
-      {parts.map((p,i) => (
-        <span key={i} className={p.added?'diff-add': p.removed?'diff-remove':''} style={p.added ? {fontWeight:'bold'} : {}}>{p.value}</span>
-      ))}
+    <div style={{lineHeight:'1.6', padding: '8px', backgroundColor: '#f8f9fa', borderRadius: '4px'}}>
+      {!hasChanges ? (
+        <span style={{color: '#6c757d', fontStyle: 'italic'}}>No changes</span>
+      ) : (
+        <>
+          <div style={{marginBottom: '8px', fontSize: '12px', fontWeight: 'bold', color: '#495057'}}>
+            📋 Changes Summary:
+          </div>
+          {parts.map((p,i) => {
+            if (p.added) {
+              return (
+                <span key={i} style={{
+                  backgroundColor: '#d1e7dd',
+                  color: '#0f5132',
+                  fontWeight: 'bold',
+                  padding: '2px 4px',
+                  borderRadius: '3px',
+                  margin: '0 1px'
+                }}>
+                  ✅ {p.value}
+                </span>
+              )
+            } else if (p.removed) {
+              return (
+                <span key={i} style={{
+                  backgroundColor: '#f8d7da',
+                  color: '#842029',
+                  fontWeight: 'bold',
+                  padding: '2px 4px',
+                  borderRadius: '3px',
+                  margin: '0 1px',
+                  textDecoration: 'line-through'
+                }}>
+                  ❌ {p.value}
+                </span>
+              )
+            } else {
+              return <span key={i} style={{color: '#495057'}}>{p.value}</span>
+            }
+          })}
+        </>
+      )}
     </div>
   )
 }
@@ -2075,22 +2125,38 @@ function ComparePanel({ docs, base, targetId, onSelectTarget, onClose }){
                   <tr><th>Section</th><th>Status</th><th>Diff</th></tr>
                 </thead>
                 <tbody>
-                  {table.map(row => (
-                    <tr key={row.section} style={row.status==='changed' ? {background:'#fffbe6'} : {}}>
-                      <td style={{whiteSpace:'nowrap'}}>
-                        <span style={{color: '#007bff', fontWeight: '600', marginRight: '8px'}}>
-                          {`1.${index + 1}.`}
-                        </span>
-                        {row.section}
-                      </td>
-                      <td>
-                        <span className="status" style={row.status==='changed' ? {color:'#d48806', fontWeight:'bold'} : {}}>
-                          {row.status}
-                        </span>
-                      </td>
-                      <td><DiffBlock before={row.before} after={row.after} /></td>
-                    </tr>
-                  ))}
+                  {table.map((row, index) => {
+                    const getStatusStyle = (status) => {
+                      switch(status) {
+                        case 'added': return {color: '#28a745', fontWeight: 'bold', backgroundColor: '#d1e7dd', padding: '4px 8px', borderRadius: '12px'};
+                        case 'removed': return {color: '#dc3545', fontWeight: 'bold', backgroundColor: '#f8d7da', padding: '4px 8px', borderRadius: '12px'};
+                        case 'changed': return {color: '#ffc107', fontWeight: 'bold', backgroundColor: '#fff3cd', padding: '4px 8px', borderRadius: '12px'};
+                        default: return {color: '#6c757d', fontWeight: 'normal'};
+                      }
+                    };
+                    
+                    return (
+                      <tr key={row.section} style={row.status==='changed' ? {background:'#fffbe6'} : row.status==='added' ? {background: '#e8f5e8'} : row.status==='removed' ? {background: '#ffe8e8'} : {}}>
+                        <td style={{whiteSpace:'nowrap', verticalAlign: 'top', padding: '12px'}}>
+                          <span style={{color: '#007bff', fontWeight: '600', marginRight: '8px'}}>
+                            {`1.${index + 1}.`}
+                          </span>
+                          <strong>{row.section}</strong>
+                        </td>
+                        <td style={{verticalAlign: 'top', padding: '12px'}}>
+                          <span style={getStatusStyle(row.status)}>
+                            {row.status === 'added' && '✅ Added'}
+                            {row.status === 'removed' && '❌ Removed'}
+                            {row.status === 'changed' && '🔄 Changed'}
+                            {row.status === 'unchanged' && '✓ No changes'}
+                          </span>
+                        </td>
+                        <td style={{verticalAlign: 'top', padding: '12px'}}>
+                          <DiffBlock before={row.before} after={row.after} />
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
