@@ -50,16 +50,43 @@ function sectionMap(sections){
   return m
 }
 function compareSections(a, b){
+  // Clean text function to ignore HTML and formatting differences
+  const cleanTextForComparison = (text) => {
+    if (!text) return '';
+    return text
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
+      .replace(/&nbsp;/g, ' ') // Decode HTML entities
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&hellip;/g, '...')
+      .replace(/&[a-zA-Z0-9#]+;/g, ' ') // Remove any other HTML entities
+      .replace(/[\s\r\n\t_-]+/g, ' ') // Normalize whitespace
+      .replace(/\s+/g, ' ') // Collapse multiple spaces
+      .replace(/\s*([.,;:!?])\s*/g, '$1') // Remove spaces around punctuation
+      .replace(/\s/g, '') // Remove all remaining spaces
+      .toLowerCase() // Case insensitive
+      .trim();
+  };
+
   const A = sectionMap(a||[])
   const B = sectionMap(b||[])
   const keys = new Set([...(a||[]).map(s=>s.key), ...(b||[]).map(s=>s.key)])
   return Array.from(keys).sort().map(key => {
-    const av = (A.get(key)||'').trim()
-    const bv = (B.get(key)||'').trim()
+    const av = A.get(key)||''
+    const bv = B.get(key)||''
+    
+    // Clean both versions for comparison
+    const avClean = cleanTextForComparison(av)
+    const bvClean = cleanTextForComparison(bv)
+    
     let status = 'unchanged'
-    if(!av && bv) status = 'added'
-    else if(av && !bv) status = 'removed'
-    else if(av !== bv) status = 'changed'
+    if(!avClean && bvClean) status = 'added'
+    else if(avClean && !bvClean) status = 'removed'
+    else if(avClean !== bvClean) status = 'changed'
+    
     return { section: key, status, before: av, after: bv }
   })
 }
@@ -206,26 +233,25 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
   }
   
   const getRowStatus = (row) => {
-    // Clean and normalize text for comparison
+    // Use the same cleaning logic as compareSections
     const cleanText = (text) => {
       if (!text) return '';
       return text
-        // Remove HTML tags
-        .replace(/<[^>]*>/g, '')
-        // Decode HTML entities
-        .replace(/&nbsp;/g, ' ')
+        .replace(/<[^>]*>/g, '') // Remove HTML tags
+        .replace(/&nbsp;/g, ' ') // Decode HTML entities
         .replace(/&amp;/g, '&')
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>')
         .replace(/&quot;/g, '"')
         .replace(/&#39;/g, "'")
         .replace(/&hellip;/g, '...')
-        // Remove all types of whitespace and formatting
-        .replace(/[\s\r\n\t_]+/g, ' ')  // Replace any whitespace, underscores with single space
-        .replace(/\s*([.,;:!?])\s*/g, '$1 ')  // Normalize punctuation spacing
-        .replace(/\s+/g, ' ')  // Collapse multiple spaces
-        .trim()
-        .toLowerCase();
+        .replace(/&[a-zA-Z0-9#]+;/g, ' ') // Remove any other HTML entities
+        .replace(/[\s\r\n\t_-]+/g, ' ') // Normalize whitespace
+        .replace(/\s+/g, ' ') // Collapse multiple spaces
+        .replace(/\s*([.,;:!?])\s*/g, '$1') // Remove spaces around punctuation
+        .replace(/\s/g, '') // Remove all remaining spaces
+        .toLowerCase() // Case insensitive
+        .trim();
     };
     
     const textBefore = cleanText(row.before);
