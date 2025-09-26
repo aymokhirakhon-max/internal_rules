@@ -66,13 +66,14 @@ function compareSections(a, b){
 
 // New Comparative Table Component
 // Enhanced DiffBlock for Comparative Table
-function ComparativeDiffBlock({ before, after, showFull = false, showOnlyRemovals = false, showOnlyAdditions = false }) {
-  // For display purposes, we'll work with the original HTML content
-  // but use cleaned text for comparison logic
+function ComparativeDiffBlock({ before, after, showFull = false }) {
+  // Clean text by removing HTML tags, entities, and normalizing whitespace - IGNORE ALL SPACE DIFFERENCES
   const cleanText = (text) => {
     if (!text) return '';
     return text
+      // Remove HTML tags completely
       .replace(/<[^>]*>/g, '')
+      // Decode HTML entities
       .replace(/&nbsp;/g, ' ')
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
@@ -80,68 +81,98 @@ function ComparativeDiffBlock({ before, after, showFull = false, showOnlyRemoval
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
       .replace(/&hellip;/g, '...')
-      .replace(/[\s\r\n\t_]+/g, ' ')
-      .replace(/\s*([.,;:!?])\s*/g, '$1 ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toLowerCase();
+      .replace(/&[a-zA-Z0-9#]+;/g, ' ') // Remove any other HTML entities
+      // AGGRESSIVE SPACE NORMALIZATION - ignore all spacing differences
+      .replace(/[\s\r\n\t_-]+/g, ' ') // Replace all whitespace, underscores, dashes with single space
+      .replace(/\s+/g, ' ') // Collapse multiple spaces
+      .replace(/\s*([.,;:!?])\s*/g, '$1') // Remove spaces around punctuation completely
+      .replace(/\s/g, '') // REMOVE ALL REMAINING SPACES for comparison
+      .toLowerCase() // Case insensitive comparison
+      .trim();
   };
 
-  const beforeTextClean = cleanText(before);
-  const afterTextClean = cleanText(after);
+  const beforeText = cleanText(before);
+  const afterText = cleanText(after);
   
-  // If content is the same after cleaning, show original HTML
-  if (beforeTextClean === afterTextClean) {
-    const content = after || before || '';
-    return content ? (
-      <div dangerouslySetInnerHTML={{ __html: content }} />
-    ) : (
-      <span style={{color: '#6c757d', fontStyle: 'italic'}}>No content</span>
-    );
-  }
+  const parts = Diff.diffWords(beforeText, afterText);
+  const hasChanges = parts.some(p => p.added || p.removed);
   
-  // For changes, we'll show the original HTML content with highlighting overlays
-  const originalContent = showOnlyRemovals ? before : after;
-  const parts = Diff.diffWords(beforeTextClean, afterTextClean);
   // Show "No content" only if both are completely empty
-  if (!originalContent) {
+  if (!beforeText && !afterText) {
     return <span style={{color: '#6c757d', fontStyle: 'italic'}}>No content</span>;
   }
   
-  // Create highlighted version by applying diff to original HTML
-  const createHighlightedHTML = (originalHTML, isRemoval) => {
-    // Strip HTML for comparison but keep track of original structure
-    const originalText = originalHTML.replace(/<[^>]*>/g, '');
-    let highlightedHTML = originalHTML;
-    
-    // Apply word-level highlighting based on diff parts
-    parts.forEach((part, index) => {
-      if (part.added && !isRemoval) {
-        // Highlight additions in green for new version
-        const escapedValue = part.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        highlightedHTML = highlightedHTML.replace(
-          new RegExp(`(>[^<]*?)${escapedValue}([^<]*?<)`, 'gi'),
-          `$1<span style="background-color: #d1e7dd; color: #0a3622; font-weight: bold; padding: 1px 3px; border-radius: 2px;">${part.value}</span>$2`
-        );
-      } else if (part.removed && isRemoval) {
-        // Highlight removals in red for old version
-        const escapedValue = part.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        highlightedHTML = highlightedHTML.replace(
-          new RegExp(`(>[^<]*?)${escapedValue}([^<]*?<)`, 'gi'),
-          `$1<span style="background-color: #f8d7da; color: #721c24; font-weight: bold; padding: 1px 3px; border-radius: 2px; text-decoration: line-through;">${part.value}</span>$2`
-        );
-      }
-    });
-    
-    return highlightedHTML;
-  };
+  // If no changes detected, show current content with indicator
+  if (!hasChanges) {
+    const displayText = afterText || beforeText;
+    const truncatedText = showFull ? displayText : (displayText.substring(0, 150) + (displayText.length > 150 ? '...' : ''));
+    return (
+      <div style={{lineHeight: '1.5'}}>
+        <span style={{
+          color: '#495057',
+          backgroundColor: '#f8f9fa',
+          padding: '2px 4px',
+          borderRadius: '3px',
+          fontSize: '11px',
+          marginRight: '6px'
+        }}>
+          UNCHANGED
+        </span>
+        <span style={{color: '#495057'}}>{truncatedText}</span>
+      </div>
+    );
+  }
   
-  const highlightedContent = createHighlightedHTML(originalContent, showOnlyRemovals);
-  
-  // Show original HTML content with only changed parts highlighted
+  // Show diff with changes
   return (
     <div style={{lineHeight: '1.5'}}>
-      <div dangerouslySetInnerHTML={{ __html: highlightedContent }} />
+      <div style={{marginBottom: '4px'}}>
+        <span style={{
+          color: '#28a745',
+          backgroundColor: '#d1e7dd',
+          padding: '1px 4px',
+          borderRadius: '3px',
+          fontSize: '10px',
+          marginRight: '4px'
+        }}>
+          CHANGES DETECTED
+        </span>
+      </div>
+      {parts.map((p, i) => {
+        if (p.added) {
+          return (
+            <span key={i} style={{
+              backgroundColor: '#d1e7dd',
+              color: '#0a3622',
+              fontWeight: 'bold',
+              padding: '2px 4px',
+              borderRadius: '3px',
+              margin: '0 1px',
+              display: 'inline-block'
+            }}>
+              ✅ {p.value}
+            </span>
+          );
+        } else if (p.removed) {
+          return (
+            <span key={i} style={{
+              backgroundColor: '#f8d7da',
+              color: '#721c24',
+              fontWeight: 'bold',
+              padding: '2px 4px',
+              borderRadius: '3px',
+              margin: '0 1px',
+              textDecoration: 'line-through',
+              display: 'inline-block'
+            }}>
+              ❌ {p.value}
+            </span>
+          );
+        } else {
+          const displayText = showFull ? p.value : (p.value.length > 100 ? p.value.substring(0, 100) + '...' : p.value);
+          return <span key={i} style={{color: '#495057', wordBreak: 'break-word'}}>{displayText}</span>;
+        }
+      })}
     </div>
   );
 }
@@ -523,19 +554,29 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
                       color: '#495057'
                     }}>
                       {row.before ? (
-                        getRowStatus(row) !== 'unchanged' ? (
-                          <ComparativeDiffBlock 
-                            before={row.before} 
-                            after={row.after} 
-                            showFull={true}
-                            showOnlyRemovals={true}
-                          />
-                        ) : (
-                          <div 
-                            style={{ opacity: 0.8 }}
-                            dangerouslySetInnerHTML={{ __html: row.before }}
-                          />
-                        )
+                        <div style={{
+                          opacity: 0.8,
+                          border: getRowStatus(row) !== 'unchanged' ? '2px solid #f8d7da' : 'none',
+                          borderRadius: getRowStatus(row) !== 'unchanged' ? '4px' : '0',
+                          padding: getRowStatus(row) !== 'unchanged' ? '8px' : '0',
+                          backgroundColor: getRowStatus(row) !== 'unchanged' ? '#fff5f5' : 'transparent'
+                        }}>
+                          <div dangerouslySetInnerHTML={{ __html: row.before }} />
+                          {getRowStatus(row) !== 'unchanged' && (
+                            <div style={{
+                              marginTop: '8px',
+                              padding: '4px 8px',
+                              backgroundColor: '#f8d7da',
+                              border: '1px solid #f5c6cb',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              color: '#721c24',
+                              fontWeight: '500'
+                            }}>
+                              🔴 This section was modified
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <span style={{ color: '#6c757d', fontStyle: 'italic' }}>No content</span>
                       )}
@@ -562,18 +603,28 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
                       lineHeight: '1.5'
                     }}>
                       {row.after ? (
-                        getRowStatus(row) !== 'unchanged' ? (
-                          <ComparativeDiffBlock 
-                            before={row.before} 
-                            after={row.after} 
-                            showFull={true}
-                            showOnlyAdditions={true}
-                          />
-                        ) : (
-                          <div 
-                            dangerouslySetInnerHTML={{ __html: row.after }}
-                          />
-                        )
+                        <div style={{
+                          border: getRowStatus(row) !== 'unchanged' ? '2px solid #d1e7dd' : 'none',
+                          borderRadius: getRowStatus(row) !== 'unchanged' ? '4px' : '0',
+                          padding: getRowStatus(row) !== 'unchanged' ? '8px' : '0',
+                          backgroundColor: getRowStatus(row) !== 'unchanged' ? '#f0fff4' : 'transparent'
+                        }}>
+                          <div dangerouslySetInnerHTML={{ __html: row.after }} />
+                          {getRowStatus(row) !== 'unchanged' && (
+                            <div style={{
+                              marginTop: '8px',
+                              padding: '4px 8px',
+                              backgroundColor: '#d1e7dd',
+                              border: '1px solid #c3e6cb',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              color: '#155724',
+                              fontWeight: '500'
+                            }}>
+                              🟢 This section has changes
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <span style={{ color: '#6c757d', fontStyle: 'italic' }}>No content</span>
                       )}
