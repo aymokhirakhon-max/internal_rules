@@ -1552,28 +1552,59 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
     setEditingTitle(null)
     setTempTitle('')
   }
+  function generateSectionNumber(index) {
+    const major = 1; // Can be made dynamic if you want multiple chapters
+    const minor = index + 1;
+    return `${major}.${minor}.`;
+  }
+  
+  function insertNumberingIntoSection(sectionKey, index) {
+    const latest = d.versions[d.versions.length-1];
+    
+    // Count how many articles already exist in Introduction sections
+    let articleCount = 0;
+    for (let i = 0; i <= index; i++) {
+      const section = latest.sections[i];
+      if (section && section.key.toLowerCase().includes('introduction')) {
+        // Count existing numbered articles in this section
+        const text = section.text || '';
+        const numberMatches = text.match(/<strong[^>]*>1\.\d+\.<\/strong>/g) || [];
+        articleCount += numberMatches.length;
+      }
+    }
+    
+    const nextNumber = `1.${articleCount + 1}.`;
+    const numberingHtml = `<p><strong style="color: #007bff;">${nextNumber}</strong> </p>`;
+    
+    const sections = latest.sections.map(s => {
+      if (s.key === sectionKey) {
+        // If section is empty, just add numbering, otherwise prepend it
+        const currentText = s.text || '';
+        const newText = currentText.trim() === '' ? numberingHtml : numberingHtml + currentText;
+        return { ...s, text: newText };
+      }
+      return s;
+    });
+    const versions = d.versions.slice(0,-1).concat({ ...latest, sections });
+    update('versions', versions);
+  }
+  
   function addArticle(afterIndex){
     const latest = d.versions[d.versions.length-1]
     const existingSections = latest.sections || []
     
-    // Generate automatic numbering like 1.1, 1.2, 1.3, etc.
-    const sectionNumbers = existingSections
-      .map(s => s.key)
-      .filter(key => /^\d+\.\d+/.test(key))
-      .map(key => {
-        const match = key.match(/^(\d+)\.(\d+)/)
-        return match ? { major: parseInt(match[1]), minor: parseInt(match[2]) } : null
-      })
-      .filter(Boolean)
+    // Count total articles across all Introduction sections
+    let totalArticles = 0;
+    existingSections.forEach(section => {
+      if (section.key.toLowerCase().includes('introduction')) {
+        const text = section.text || '';
+        const numberMatches = text.match(/<strong[^>]*>1\.\d+\.<\/strong>/g) || [];
+        totalArticles += numberMatches.length;
+      }
+    });
     
-    let nextNumber = '1.1'
-    if (sectionNumbers.length > 0) {
-      const maxMajor = Math.max(...sectionNumbers.map(n => n.major))
-      const maxMinorInMajor = Math.max(...sectionNumbers.filter(n => n.major === maxMajor).map(n => n.minor))
-      nextNumber = `${maxMajor}.${maxMinorInMajor + 1}`
-    }
-    
-    const newSection = { key: `${nextNumber}. Article`, text: '' }
+    const nextNumber = `1.${totalArticles + 1}.`;
+    const newSection = { key: 'Article', text: `<p><strong style="color: #007bff;">${nextNumber}</strong> </p>` }
     const sections = [...existingSections]
     sections.splice(afterIndex + 1, 0, newSection)
     const versions = d.versions.slice(0,-1).concat({ ...latest, sections })
@@ -1834,6 +1865,15 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
                         '|', 'insertTable', 'imageUpload', 'undo', 'redo', 'alignment', 'fontColor', 'fontBackgroundColor', 'fontSize', 'fontFamily',
                         'outdent', 'indent', 'code', 'codeBlock', 'removeFormat'
                       ],
+                      heading: {
+                        options: [
+                          { model: 'paragraph', title: 'Section', class: 'ck-heading_paragraph' },
+                          { model: 'heading1', view: 'h1', title: 'Heading 1', class: 'ck-heading_heading1' },
+                          { model: 'heading2', view: 'h2', title: 'Heading 2', class: 'ck-heading_heading2' },
+                          { model: 'heading3', view: 'h3', title: 'Heading 3', class: 'ck-heading_heading3' },
+                          { model: 'heading4', view: 'h4', title: 'Heading 4', class: 'ck-heading_heading4' }
+                        ]
+                      },
                       table: {
                         contentToolbar: [ 'tableColumn', 'tableRow', 'mergeTableCells' ]
                       }
@@ -1844,30 +1884,60 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
                     <span>{(section.text||'').replace(/<[^>]*>?/gm, '').length} characters</span>
                   </div>
                   
-                  {/* Add Article Button after each section */}
-                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e9ecef', textAlign: 'center' }}>
-                    <button 
-                      onClick={() => addArticle(index)}
-                      style={{
-                        backgroundColor: '#28a745',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        padding: '6px 12px',
-                        fontSize: '12px',
-                        cursor: 'pointer',
-                        fontWeight: '500',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                    >
-                      ➕ Add Article
-                    </button>
-                    <div style={{ fontSize: '10px', color: '#6c757d', marginTop: '4px' }}>
-                      New article will be numbered automatically
+                  {/* Add numbering and article buttons only after Introduction section */}
+                  {section.key.toLowerCase().includes('introduction') && (
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e9ecef', textAlign: 'center' }}>
+                      <button 
+                        onClick={() => insertNumberingIntoSection(section.key, index)}
+                        style={{
+                          backgroundColor: '#007bff',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          padding: '4px 8px',
+                          fontSize: '11px',
+                          cursor: 'pointer',
+                          fontWeight: '500',
+                          marginRight: '8px'
+                        }}
+                      >
+                        📝 Add {(() => {
+                          // Calculate next article number
+                          const latest = d.versions[d.versions.length-1];
+                          let totalArticles = 0;
+                          latest.sections.forEach(s => {
+                            if (s.key.toLowerCase().includes('introduction')) {
+                              const text = s.text || '';
+                              const matches = text.match(/<strong[^>]*>1\.\d+\.<\/strong>/g) || [];
+                              totalArticles += matches.length;
+                            }
+                          });
+                          return `1.${totalArticles + 1}.`;
+                        })()}
+                      </button>
+                      <button 
+                        onClick={() => addArticle(index)}
+                        style={{
+                          backgroundColor: '#28a745',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          padding: '6px 12px',
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          fontWeight: '500',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        ➕ Add Article
+                      </button>
+                      <div style={{ fontSize: '10px', color: '#6c757d', marginTop: '4px' }}>
+                        New article will be numbered automatically (1.1, 1.2, 1.3, etc.)
+                      </div>
                     </div>
-                  </div>
+                  )}
               </div>
             );
 // ...existing code...
@@ -1980,7 +2050,12 @@ function ComparePanel({ docs, base, targetId, onSelectTarget, onClose }){
                 <tbody>
                   {table.map(row => (
                     <tr key={row.section} style={row.status==='changed' ? {background:'#fffbe6'} : {}}>
-                      <td style={{whiteSpace:'nowrap'}}>{row.section}</td>
+                      <td style={{whiteSpace:'nowrap'}}>
+                        <span style={{color: '#007bff', fontWeight: '600', marginRight: '8px'}}>
+                          {`1.${index + 1}.`}
+                        </span>
+                        {row.section}
+                      </td>
                       <td>
                         <span className="status" style={row.status==='changed' ? {color:'#d48806', fontWeight:'bold'} : {}}>
                           {row.status}
