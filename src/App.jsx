@@ -66,14 +66,13 @@ function compareSections(a, b){
 
 // New Comparative Table Component
 // Enhanced DiffBlock for Comparative Table
-function ComparativeDiffBlock({ before, after, showFull = false }) {
-  // Clean and normalize text function (same as in getRowStatus)
+function ComparativeDiffBlock({ before, after, showFull = false, showOnlyRemovals = false, showOnlyAdditions = false }) {
+  // For display purposes, we'll work with the original HTML content
+  // but use cleaned text for comparison logic
   const cleanText = (text) => {
     if (!text) return '';
     return text
-      // Remove HTML tags
       .replace(/<[^>]*>/g, '')
-      // Decode HTML entities
       .replace(/&nbsp;/g, ' ')
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
@@ -81,97 +80,68 @@ function ComparativeDiffBlock({ before, after, showFull = false }) {
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
       .replace(/&hellip;/g, '...')
-      // Remove all types of whitespace and formatting
-      .replace(/[\s\r\n\t_]+/g, ' ')  // Replace any whitespace, underscores with single space
-      .replace(/\s*([.,;:!?])\s*/g, '$1 ')  // Normalize punctuation spacing
-      .replace(/\s+/g, ' ')  // Collapse multiple spaces
+      .replace(/[\s\r\n\t_]+/g, ' ')
+      .replace(/\s*([.,;:!?])\s*/g, '$1 ')
+      .replace(/\s+/g, ' ')
       .trim()
-      .toLowerCase(); // Make comparison case-insensitive
+      .toLowerCase();
   };
 
-  const beforeText = cleanText(before);
-  const afterText = cleanText(after);
+  const beforeTextClean = cleanText(before);
+  const afterTextClean = cleanText(after);
   
-  // Only do diff if texts are actually different after cleaning
-  const parts = beforeText === afterText ? [] : Diff.diffWords(beforeText, afterText);
-  const hasChanges = parts.some(p => p.added || p.removed);
-  
-  // Show "No content" only if both are completely empty
-  if (!beforeText && !afterText) {
-    return <span style={{color: '#6c757d', fontStyle: 'italic'}}>No content</span>;
-  }
-  
-  // If no changes detected, show current content with indicator
-  if (!hasChanges) {
-    const displayText = afterText || beforeText;
-    const truncatedText = showFull ? displayText : (displayText.substring(0, 150) + (displayText.length > 150 ? '...' : ''));
-    return (
-      <div style={{lineHeight: '1.5'}}>
-        <span style={{
-          color: '#495057',
-          backgroundColor: '#f8f9fa',
-          padding: '2px 4px',
-          borderRadius: '3px',
-          fontSize: '11px',
-          marginRight: '6px'
-        }}>
-          UNCHANGED
-        </span>
-        <span style={{color: '#495057'}}>{truncatedText}</span>
-      </div>
+  // If content is the same after cleaning, show original HTML
+  if (beforeTextClean === afterTextClean) {
+    const content = after || before || '';
+    return content ? (
+      <div dangerouslySetInnerHTML={{ __html: content }} />
+    ) : (
+      <span style={{color: '#6c757d', fontStyle: 'italic'}}>No content</span>
     );
   }
   
-  // Show diff with changes
+  // For changes, we'll show the original HTML content with highlighting overlays
+  const originalContent = showOnlyRemovals ? before : after;
+  const parts = Diff.diffWords(beforeTextClean, afterTextClean);
+  // Show "No content" only if both are completely empty
+  if (!originalContent) {
+    return <span style={{color: '#6c757d', fontStyle: 'italic'}}>No content</span>;
+  }
+  
+  // Create highlighted version by applying diff to original HTML
+  const createHighlightedHTML = (originalHTML, isRemoval) => {
+    // Strip HTML for comparison but keep track of original structure
+    const originalText = originalHTML.replace(/<[^>]*>/g, '');
+    let highlightedHTML = originalHTML;
+    
+    // Apply word-level highlighting based on diff parts
+    parts.forEach((part, index) => {
+      if (part.added && !isRemoval) {
+        // Highlight additions in green for new version
+        const escapedValue = part.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        highlightedHTML = highlightedHTML.replace(
+          new RegExp(`(>[^<]*?)${escapedValue}([^<]*?<)`, 'gi'),
+          `$1<span style="background-color: #d1e7dd; color: #0a3622; font-weight: bold; padding: 1px 3px; border-radius: 2px;">${part.value}</span>$2`
+        );
+      } else if (part.removed && isRemoval) {
+        // Highlight removals in red for old version
+        const escapedValue = part.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        highlightedHTML = highlightedHTML.replace(
+          new RegExp(`(>[^<]*?)${escapedValue}([^<]*?<)`, 'gi'),
+          `$1<span style="background-color: #f8d7da; color: #721c24; font-weight: bold; padding: 1px 3px; border-radius: 2px; text-decoration: line-through;">${part.value}</span>$2`
+        );
+      }
+    });
+    
+    return highlightedHTML;
+  };
+  
+  const highlightedContent = createHighlightedHTML(originalContent, showOnlyRemovals);
+  
+  // Show original HTML content with only changed parts highlighted
   return (
     <div style={{lineHeight: '1.5'}}>
-      <div style={{marginBottom: '4px'}}>
-        <span style={{
-          color: '#28a745',
-          backgroundColor: '#d1e7dd',
-          padding: '1px 4px',
-          borderRadius: '3px',
-          fontSize: '10px',
-          marginRight: '4px'
-        }}>
-          CHANGES DETECTED
-        </span>
-      </div>
-      {parts.map((p, i) => {
-        if (p.added) {
-          return (
-            <span key={i} style={{
-              backgroundColor: '#d1e7dd',
-              color: '#0a3622',
-              fontWeight: 'bold',
-              padding: '2px 4px',
-              borderRadius: '3px',
-              margin: '0 1px',
-              display: 'inline-block'
-            }}>
-              ✅ {p.value}
-            </span>
-          );
-        } else if (p.removed) {
-          return (
-            <span key={i} style={{
-              backgroundColor: '#f8d7da',
-              color: '#721c24',
-              fontWeight: 'bold',
-              padding: '2px 4px',
-              borderRadius: '3px',
-              margin: '0 1px',
-              textDecoration: 'line-through',
-              display: 'inline-block'
-            }}>
-              ❌ {p.value}
-            </span>
-          );
-        } else {
-          const displayText = showFull ? p.value : (p.value.length > 100 ? p.value.substring(0, 100) + '...' : p.value);
-          return <span key={i} style={{color: '#495057', wordBreak: 'break-word'}}>{displayText}</span>;
-        }
-      })}
+      <div dangerouslySetInnerHTML={{ __html: highlightedContent }} />
     </div>
   );
 }
@@ -553,10 +523,19 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
                       color: '#495057'
                     }}>
                       {row.before ? (
-                        <div 
-                          style={{ opacity: 0.8 }}
-                          dangerouslySetInnerHTML={{ __html: row.before }}
-                        />
+                        getRowStatus(row) !== 'unchanged' ? (
+                          <ComparativeDiffBlock 
+                            before={row.before} 
+                            after={row.after} 
+                            showFull={true}
+                            showOnlyRemovals={true}
+                          />
+                        ) : (
+                          <div 
+                            style={{ opacity: 0.8 }}
+                            dangerouslySetInnerHTML={{ __html: row.before }}
+                          />
+                        )
                       ) : (
                         <span style={{ color: '#6c757d', fontStyle: 'italic' }}>No content</span>
                       )}
@@ -583,25 +562,20 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
                       lineHeight: '1.5'
                     }}>
                       {row.after ? (
-                        <div 
-                          dangerouslySetInnerHTML={{ __html: row.after }}
-                        />
+                        getRowStatus(row) !== 'unchanged' ? (
+                          <ComparativeDiffBlock 
+                            before={row.before} 
+                            after={row.after} 
+                            showFull={true}
+                            showOnlyAdditions={true}
+                          />
+                        ) : (
+                          <div 
+                            dangerouslySetInnerHTML={{ __html: row.after }}
+                          />
+                        )
                       ) : (
                         <span style={{ color: '#6c757d', fontStyle: 'italic' }}>No content</span>
-                      )}
-                      {/* Show change indicator if different */}
-                      {getRowStatus(row) !== 'unchanged' && (
-                        <div style={{
-                          marginTop: '8px',
-                          padding: '4px 8px',
-                          backgroundColor: '#fff3cd',
-                          border: '1px solid #ffeaa7',
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          color: '#856404'
-                        }}>
-                          📝 This section has been modified
-                        </div>
                       )}
                     </div>
                   </td>
