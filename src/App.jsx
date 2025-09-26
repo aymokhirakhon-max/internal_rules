@@ -1506,6 +1506,9 @@ export default function App(){
 
 function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
   const [d, setD] = useState(doc)
+  const [editingTitle, setEditingTitle] = useState(null)
+  const [tempTitle, setTempTitle] = useState('')
+  
   useEffect(()=> setD(doc), [doc.id])
 
   function update(key, value){
@@ -1518,11 +1521,61 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
     const versions = d.versions.slice(0,-1).concat({ ...latest, sections })
     update('versions', versions)
   }
+  function updateSectionTitle(oldKey, newKey){
+    if (!newKey.trim() || oldKey === newKey.trim()) return
+    
+    const latest = d.versions[d.versions.length-1]
+    const sections = latest.sections.map(s => s.key===oldKey ? { ...s, key: newKey.trim() } : s)
+    const versions = d.versions.slice(0,-1).concat({ ...latest, sections })
+    update('versions', versions)
+  }
   function deleteSection(key){
     if (!confirm(`Are you sure you want to delete the section "${key}"?`)) return
     
     const latest = d.versions[d.versions.length-1]
     const sections = latest.sections.filter(s => s.key !== key)
+    const versions = d.versions.slice(0,-1).concat({ ...latest, sections })
+    update('versions', versions)
+  }
+  function startEditingTitle(sectionKey){
+    setEditingTitle(sectionKey)
+    setTempTitle(sectionKey)
+  }
+  function saveTitle(oldKey){
+    if (tempTitle.trim() && tempTitle.trim() !== oldKey) {
+      updateSectionTitle(oldKey, tempTitle.trim())
+    }
+    setEditingTitle(null)
+    setTempTitle('')
+  }
+  function cancelEditingTitle(){
+    setEditingTitle(null)
+    setTempTitle('')
+  }
+  function addArticle(afterIndex){
+    const latest = d.versions[d.versions.length-1]
+    const existingSections = latest.sections || []
+    
+    // Generate automatic numbering like 1.1, 1.2, 1.3, etc.
+    const sectionNumbers = existingSections
+      .map(s => s.key)
+      .filter(key => /^\d+\.\d+/.test(key))
+      .map(key => {
+        const match = key.match(/^(\d+)\.(\d+)/)
+        return match ? { major: parseInt(match[1]), minor: parseInt(match[2]) } : null
+      })
+      .filter(Boolean)
+    
+    let nextNumber = '1.1'
+    if (sectionNumbers.length > 0) {
+      const maxMajor = Math.max(...sectionNumbers.map(n => n.major))
+      const maxMinorInMajor = Math.max(...sectionNumbers.filter(n => n.major === maxMajor).map(n => n.minor))
+      nextNumber = `${maxMajor}.${maxMinorInMajor + 1}`
+    }
+    
+    const newSection = { key: `${nextNumber}. Article`, text: '' }
+    const sections = [...existingSections]
+    sections.splice(afterIndex + 1, 0, newSection)
     const versions = d.versions.slice(0,-1).concat({ ...latest, sections })
     update('versions', versions)
   }
@@ -1643,39 +1696,130 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
         </div>
         
         <div style={{display:'grid', gap:12, marginTop:8}}>
-          {latest.sections.map(section => {
+          {latest.sections.map((section, index) => {
             const isRequired = REQUIRED[d.type].includes(section.key);
             return (
-              <div key={section.key}>
+              <div key={`${section.key}-${index}`}>
                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
-                  <div className="muted" style={{fontWeight:600}}>
-                    {section.key}
-                    {isRequired && <span style={{color:'#dc3545', marginLeft:4}}>*</span>}
+                  <div style={{display:'flex', alignItems:'center', flex:1}}>
+                    {editingTitle === section.key ? (
+                      <div style={{display:'flex', alignItems:'center', gap:8, flex:1}}>
+                        <input
+                          type="text"
+                          value={tempTitle}
+                          onChange={(e) => setTempTitle(e.target.value)}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') saveTitle(section.key)
+                            if (e.key === 'Escape') cancelEditingTitle()
+                          }}
+                          onBlur={() => saveTitle(section.key)}
+                          autoFocus
+                          style={{
+                            fontFamily: 'Arial, sans-serif',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            color: '#495057',
+                            border: '1px solid #007bff',
+                            borderRadius: '3px',
+                            padding: '4px 8px',
+                            flex: 1,
+                            minWidth: '200px'
+                          }}
+                        />
+                        <button
+                          onClick={() => saveTitle(section.key)}
+                          style={{
+                            backgroundColor: '#28a745',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '3px',
+                            padding: '4px 8px',
+                            fontSize: '11px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={cancelEditingTitle}
+                          style={{
+                            backgroundColor: '#6c757d',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '3px',
+                            padding: '4px 8px',
+                            fontSize: '11px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div 
+                        style={{
+                          fontFamily: 'Arial, sans-serif',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          color: '#495057',
+                          cursor: 'pointer',
+                          padding: '4px 8px',
+                          borderRadius: '3px',
+                          border: '1px solid transparent',
+                          transition: 'all 0.2s ease',
+                          flex: 1
+                        }}
+                        onClick={() => startEditingTitle(section.key)}
+                        title="Click to edit section title"
+                        onMouseEnter={(e) => {
+                          e.target.style.backgroundColor = '#f8f9fa'
+                          e.target.style.border = '1px solid #dee2e6'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.backgroundColor = 'transparent'
+                          e.target.style.border = '1px solid transparent'
+                        }}
+                      >
+                        {section.key}
+                        {isRequired && <span style={{color:'#dc3545', marginLeft:4}}>*</span>}
+                        <span style={{
+                          marginLeft: '8px', 
+                          fontSize: '11px', 
+                          color: '#6c757d',
+                          fontWeight: 'normal'
+                        }}>
+                          ✏️
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  <button
-                    onClick={() => {
-                      if (isRequired) {
-                        if (!confirm(`"${section.key}" is a required section. Deleting it may affect document compliance. Are you sure you want to delete it?`)) {
-                          return;
+                  {editingTitle !== section.key && (
+                    <button
+                      onClick={() => {
+                        if (isRequired) {
+                          if (!confirm(`"${section.key}" is a required section. Deleting it may affect document compliance. Are you sure you want to delete it?`)) {
+                            return;
+                          }
                         }
-                      }
-                      deleteSection(section.key);
-                    }}
-                    title={`Delete section: ${section.key}${isRequired ? ' (Required)' : ''}`}
-                    style={{
-                      backgroundColor: 'transparent',
-                      border: `1px solid ${isRequired ? '#ffc107' : '#dc3545'}`,
-                      color: isRequired ? '#856404' : '#dc3545',
-                      padding: '2px 8px',
-                      borderRadius: '3px',
-                      fontSize: '12px',
-                      cursor: 'pointer',
-                      fontWeight: '500',
-                      opacity: isRequired ? 0.8 : 1
-                    }}
-                  >
-                    {isRequired ? 'Delete*' : 'Delete'}
-                  </button>
+                        deleteSection(section.key);
+                      }}
+                      title={`Delete section: ${section.key}${isRequired ? ' (Required)' : ''}`}
+                      style={{
+                        backgroundColor: 'transparent',
+                        border: `1px solid ${isRequired ? '#ffc107' : '#dc3545'}`,
+                        color: isRequired ? '#856404' : '#dc3545',
+                        padding: '2px 8px',
+                        borderRadius: '3px',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        fontWeight: '500',
+                        opacity: isRequired ? 0.8 : 1,
+                        marginLeft: '8px'
+                      }}
+                    >
+                      {isRequired ? 'Delete*' : 'Delete'}
+                    </button>
+                  )}
                 </div>
                   <CKEditor
                     editor={ClassicEditor}
@@ -1698,6 +1842,31 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
                   <div style={{fontSize:12, color:'#888', marginTop:4, display:'flex', justifyContent:'space-between'}}>
                     <span><b>Tip:</b> Use the toolbar above for Word-like formatting and table creation. Paste from Word for advanced tables.</span>
                     <span>{(section.text||'').replace(/<[^>]*>?/gm, '').length} characters</span>
+                  </div>
+                  
+                  {/* Add Article Button after each section */}
+                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e9ecef', textAlign: 'center' }}>
+                    <button 
+                      onClick={() => addArticle(index)}
+                      style={{
+                        backgroundColor: '#28a745',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        fontWeight: '500',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      ➕ Add Article
+                    </button>
+                    <div style={{ fontSize: '10px', color: '#6c757d', marginTop: '4px' }}>
+                      New article will be numbered automatically
+                    </div>
                   </div>
               </div>
             );
