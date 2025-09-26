@@ -159,6 +159,7 @@ function ComparativeDiffBlock({ before, after, showFull = false }) {
 
 function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
   const [localComments, setLocalComments] = useState(comments)
+  const [showOnlyChanges, setShowOnlyChanges] = useState(true) // Hide unchanged by default
   
   const addComment = (sectionKey, comment) => {
     const newComment = {
@@ -183,19 +184,45 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
   }
   
   const getRowStatus = (row) => {
-    // Clean up HTML and whitespace for better comparison
+    // Enhanced text cleaning for better comparison
     const cleanText = (text) => {
-      if (!text) return '';
-      return text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+      if (!text || text === null || text === undefined) return '';
+      
+      return text
+        // Remove HTML tags
+        .replace(/<[^>]*>/g, '')
+        // Remove HTML entities
+        .replace(/&[a-zA-Z0-9#]+;/g, ' ')
+        // Normalize whitespace
+        .replace(/\s+/g, ' ')
+        // Remove non-printable characters
+        .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
+        // Trim and convert to lowercase for comparison
+        .trim()
+        .toLowerCase();
     };
     
     const cleanBefore = cleanText(row.before);
     const cleanAfter = cleanText(row.after);
     
+    // More detailed comparison
     if (!cleanBefore && !cleanAfter) return 'unchanged';
     if (!cleanBefore && cleanAfter) return 'added';
     if (cleanBefore && !cleanAfter) return 'removed';
-    if (cleanBefore !== cleanAfter) return 'changed';
+    
+    // Use a more sophisticated comparison for changes
+    if (cleanBefore !== cleanAfter) {
+      // Check if it's just minor formatting differences
+      const beforeWords = cleanBefore.split(/\s+/).filter(w => w.length > 0);
+      const afterWords = cleanAfter.split(/\s+/).filter(w => w.length > 0);
+      
+      // If word count or content significantly differs, it's changed
+      if (beforeWords.length !== afterWords.length || 
+          beforeWords.some((word, i) => word !== afterWords[i])) {
+        return 'changed';
+      }
+    }
+    
     return 'unchanged';
   }
   
@@ -218,15 +245,44 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
     )
   }
   
-  const comparisonData = compareSections(oldVersion.sections, newVersion.sections)
+  const allComparisonData = compareSections(oldVersion.sections, newVersion.sections)
   
-
+  // Filter data based on user preference - AGGRESSIVE FILTERING
+  const comparisonData = showOnlyChanges 
+    ? allComparisonData.filter(row => {
+        const status = getRowStatus(row);
+        
+        // Clean the content to check if it's truly empty
+        const cleanBefore = (row.before || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+        const cleanAfter = (row.after || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+        
+        // AGGRESSIVE: Hide if:
+        // 1. Status is unchanged 
+        // 2. Both before and after are empty
+        // 3. Both before and after are identical (even if not empty)
+        if (status === 'unchanged') return false;
+        if (!cleanBefore && !cleanAfter) return false;
+        if (cleanBefore === cleanAfter) return false;
+        
+        // Only show if there's a meaningful change
+        return status === 'added' || status === 'removed' || status === 'changed';
+      })
+    : allComparisonData
   
-  // Calculate summary statistics
-  const summary = comparisonData.reduce((acc, row) => {
-    acc[row.status] = (acc[row.status] || 0) + 1;
+  // Calculate summary statistics from all data
+  const summary = allComparisonData.reduce((acc, row) => {
+    const status = getRowStatus(row);
+    acc[status] = (acc[status] || 0) + 1;
     return acc;
   }, {});
+  
+  // Calculate how many sections actually have changes
+  const actualChanges = allComparisonData.filter(row => {
+    const status = getRowStatus(row);
+    const cleanBefore = (row.before || '').replace(/<[^>]*>/g, '').trim();
+    const cleanAfter = (row.after || '').replace(/<[^>]*>/g, '').trim();
+    return status !== 'unchanged' && (cleanBefore !== cleanAfter || (!cleanBefore && cleanAfter) || (cleanBefore && !cleanAfter));
+  }).length;
 
   return (
     <div style={{ 
@@ -337,6 +393,69 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
         )}
       </div>
       
+      {/* Filter Controls */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '16px',
+        padding: '12px 16px',
+        backgroundColor: '#f8f9fa',
+        borderRadius: '6px',
+        border: '1px solid #e9ecef'
+      }}>
+        <div>
+          <h4 style={{margin: '0 0 4px 0', fontSize: '16px', color: '#333'}}>
+            📋 Document Comparison
+          </h4>
+          <div style={{fontSize: '12px', color: '#666'}}>
+            Comparing {allComparisonData.length} sections total
+            {showOnlyChanges ? (
+              comparisonData.length > 0 
+                ? ` → Showing ${comparisonData.length} sections with actual changes`
+                : ` → No changes detected between versions`
+            ) : ` → Showing all sections`}
+          </div>
+        </div>
+        
+        <div style={{display: 'flex', alignItems: 'center', gap: '12px'}}>
+          <label style={{
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '6px',
+            fontSize: '14px',
+            color: '#495057',
+            cursor: 'pointer'
+          }}>
+            <input 
+              type="checkbox" 
+              checked={showOnlyChanges}
+              onChange={(e) => setShowOnlyChanges(e.target.checked)}
+              style={{margin: 0}}
+            />
+            <span>🎯 Hide unchanged sections (recommended)</span>
+          </label>
+          
+          {showOnlyChanges && comparisonData.length === 0 && (
+            <div style={{
+              color: '#28a745',
+              fontSize: '14px',
+              fontWeight: '600',
+              padding: '8px 12px',
+              backgroundColor: '#d1e7dd',
+              borderRadius: '6px',
+              border: '1px solid #c3e6cb',
+              textAlign: 'center'
+            }}>
+              ✅ No changes found between these versions!
+              <div style={{fontSize: '12px', fontWeight: 'normal', marginTop: '4px'}}>
+                The documents are identical
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Table */}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ 
@@ -497,6 +616,44 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
                 </tr>
               )
             })}
+            {/* Show message when no rows match filter */}
+            {comparisonData.length === 0 && showOnlyChanges && (
+              <tr>
+                <td colSpan="4" style={{
+                  textAlign: 'center',
+                  padding: '60px 20px',
+                  backgroundColor: '#e8f5e8',
+                  color: '#155724',
+                  border: '2px dashed #c3e6cb'
+                }}>
+                  <div style={{fontSize: '24px', marginBottom: '12px'}}>
+                    🎉 <strong>Perfect! No Changes Detected</strong>
+                  </div>
+                  <div style={{fontSize: '16px', marginBottom: '16px', color: '#6c757d'}}>
+                    Both versions are identical - no edits were made.
+                  </div>
+                  <div style={{fontSize: '14px'}}>
+                    This means your document hasn't been modified between these versions.
+                    <br/>
+                    <button 
+                      onClick={() => setShowOnlyChanges(false)}
+                      style={{
+                        background: '#007bff',
+                        border: 'none',
+                        color: 'white',
+                        padding: '8px 16px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        marginTop: '12px'
+                      }}
+                    >
+                      Show all sections anyway
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -1358,11 +1515,63 @@ export default function App(){
     reader.readAsArrayBuffer(file);
   }
 
+  // Test simple download function
+  function testDownload() {
+    console.log('Testing simple download...');
+    console.log('User activation:', navigator.userActivation?.isActive);
+    
+    try {
+      const testContent = "This is a test file content\nLine 2\nLine 3";
+      const blob = new Blob([testContent], { type: 'text/plain' });
+      console.log('Blob created:', blob.size, blob.type);
+      
+      // Check if saveAs is available
+      console.log('saveAs function available:', typeof saveAs);
+      
+      // Try file-saver method
+      console.log('Trying file-saver...');
+      saveAs(blob, 'test-download.txt');
+      console.log('file-saver download initiated successfully');
+      
+    } catch (error) {
+      console.error('file-saver failed:', error);
+      
+      // Try native browser download as fallback
+      try {
+        console.log('Trying native download...');
+        const url = URL.createObjectURL(blob);
+        console.log('Object URL created:', url);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'test-download-native.txt';
+        a.style.display = 'none';
+        console.log('Download link created:', a.href, a.download);
+        
+        document.body.appendChild(a);
+        a.click();
+        console.log('Click triggered');
+        
+        // Clean up
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          console.log('Cleanup completed');
+        }, 100);
+        
+      } catch (nativeError) {
+        console.error('Native download also failed:', nativeError);
+      }
+    }
+  }
+
   // Export Word Document function
   async function exportToWord(doc) {
+    console.log('exportToWord called with doc:', doc);
     try {
       const latestVersion = doc.versions[doc.versions.length - 1];
       const sections = latestVersion.sections || [];
+      console.log('Processing sections:', sections.length);
 
       // Create document title
       const titleParagraph = new Paragraph({
@@ -1497,7 +1706,31 @@ export default function App(){
       const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
       const filename = `${cleanTitle}_${latestVersion.version || 'v1.0'}_${timestamp}.docx`;
       
-      saveAs(new Blob([buffer]), filename);
+      // Create blob with proper MIME type for Word documents
+      const blob = new Blob([buffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
+      });
+      
+      // Try file-saver first, fallback to native download
+      try {
+        console.log('Attempting download with file-saver...');
+        saveAs(blob, filename);
+        console.log('file-saver download initiated');
+      } catch (fileSaverError) {
+        console.error('file-saver failed, trying native download:', fileSaverError);
+        
+        // Fallback to native browser download
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        console.log('Native download initiated');
+      }
       
       // Add audit log
       addAudit('export_word', doc.id, { filename });
@@ -1530,6 +1763,7 @@ export default function App(){
 
     } catch (error) {
       console.error('Export failed:', error);
+      console.error('Error details:', error.message, error.stack);
       
       // Error notification
       const notification = document.createElement('div');
@@ -1711,7 +1945,14 @@ export default function App(){
             <input type="file" accept="application/json" onChange={onImport} style={{display:'none'}} />
           </label>
           <button className="btn" onClick={exportJSON}>Export JSON</button>
-          <button className="btn" onClick={() => selected && exportToWord(selected)} disabled={!selected}>Export Word</button>
+          <button className="btn ghost" onClick={testDownload}>Test Download</button>
+          <button className="btn" onClick={(e) => {
+            e.preventDefault();
+            console.log('Header Export Word button clicked, selected:', selected);
+            if (selected) {
+              setTimeout(() => exportToWord(selected), 0);
+            }
+          }} disabled={!selected}>Export Word</button>
           <button className="btn ghost" onClick={()=>setShowComparativeTable(true)}>Comparative Table</button>
           <button className="btn ghost" onClick={()=>setShowChapterManager(true)}>Manage Chapters</button>
           <button className="btn primary" onClick={()=>newDoc('Policy')}>New</button>
@@ -1729,7 +1970,13 @@ export default function App(){
         <div style={{marginBottom:16}}>
           <button 
             className="btn primary" 
-            onClick={() => selected && exportToWord(selected)} 
+            onClick={(e) => {
+              e.preventDefault();
+              console.log('Main Export Word button clicked, selected:', selected);
+              if (selected) {
+                setTimeout(() => exportToWord(selected), 0);
+              }
+            }} 
             disabled={!selected}
             style={{opacity: selected ? 1 : 0.6}}
           >
@@ -2472,14 +2719,23 @@ function DiffBlock({ before, after }){
 function ComparePanel({ docs, base, targetId, onSelectTarget, onClose }){
   const [mode, setMode] = useState('versions')
   const [viewMode, setViewMode] = useState('diff') // 'diff' or 'comparative'
-  const [leftId, setLeftId] = useState(base.versions[0].id)
-  const [rightId, setRightId] = useState(base.versions[base.versions.length-1].id)
+  const [showOnlyChanges, setShowOnlyChanges] = useState(false)
+  
+  // Initialize with more intuitive defaults
+  // For imported documents, usually want to compare original import (first) vs latest edits (last)
+  const [leftId, setLeftId] = useState(base.versions[0]?.id)  // Original/older version
+  const [rightId, setRightId] = useState(base.versions[base.versions.length-1]?.id)  // Latest/newer version
   const target = docs.find(d=> d.id===targetId) || base
 
+  // Get the actual version objects
   const left = (mode==='versions' ? base : base).versions.find(v=>v.id===leftId) || base.versions[0]
   const right = (mode==='versions' ? base : target).versions.find(v=>v.id===rightId) || target.versions[target.versions.length-1]
 
-  const table = compareSections(left.sections, right.sections)
+  // Compare: left (old) -> right (new) to show what was changed
+  const allTableData = compareSections(left.sections, right.sections)
+  const table = showOnlyChanges 
+    ? allTableData.filter(row => row.status !== 'unchanged')
+    : allTableData
 
   return (
     <div className="panel" style={{position:'fixed', left:8, bottom:8, top:8, width:1100, maxWidth:'99vw', overflow:'auto', zIndex:1000}}>
@@ -2505,14 +2761,79 @@ function ComparePanel({ docs, base, targetId, onSelectTarget, onClose }){
           </div>
         </div>
 
-        <div className="hstack" style={{gap:8, marginBottom:12}}>
-          <select className="input select" value={leftId} onChange={e=>setLeftId(e.target.value)}>
-            {base.versions.map(v => <option key={v.id} value={v.id}>Base {v.version}</option>)}
-          </select>
-          <span>⇄</span>
-          <select className="input select" value={rightId} onChange={e=>setRightId(e.target.value)}>
-            {(mode==='versions' ? base.versions : target.versions).map(v => <option key={v.id} value={v.id}>Target {v.version}</option>)}
-          </select>
+        <div style={{marginBottom:12}}>
+          <div className="hstack" style={{gap:12, alignItems: 'center'}}>
+            <div style={{minWidth: '200px'}}>
+              <label style={{fontSize: '12px', color: '#666', display: 'block', marginBottom: '4px'}}>
+                📜 FROM (Old Version):
+              </label>
+              <select className="input select" value={leftId} onChange={e=>setLeftId(e.target.value)}>
+                {base.versions.map((v, idx) => (
+                  <option key={v.id} value={v.id}>
+                    {v.version} {idx === 0 ? '(Original)' : ''} {idx === base.versions.length-1 ? '(Latest)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div style={{fontSize: '24px', color: '#007bff', margin: '16px 8px 0 8px'}}>→</div>
+            
+            <div style={{minWidth: '200px'}}>
+              <label style={{fontSize: '12px', color: '#666', display: 'block', marginBottom: '4px'}}>
+                📝 TO (New Version):
+              </label>
+              <select className="input select" value={rightId} onChange={e=>setRightId(e.target.value)}>
+                {(mode==='versions' ? base.versions : target.versions).map((v, idx) => {
+                  const versions = mode==='versions' ? base.versions : target.versions;
+                  return (
+                    <option key={v.id} value={v.id}>
+                      {v.version} {idx === 0 ? '(Original)' : ''} {idx === versions.length-1 ? '(Latest)' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+          
+          <div style={{marginTop: '8px', fontSize: '12px', color: '#666', fontStyle: 'italic'}}>
+            💡 Tip: Select older version as "FROM" and newer version as "TO" to see what was added/changed
+          </div>
+          
+          {/* Comparison Summary */}
+          <div style={{
+            marginTop: '12px', 
+            padding: '12px', 
+            backgroundColor: '#f8f9fa', 
+            borderRadius: '6px',
+            border: '1px solid #e9ecef'
+          }}>
+            <div style={{fontSize: '13px', fontWeight: '500', marginBottom: '4px'}}>
+              📊 Comparing: <strong>{left.version}</strong> → <strong>{right.version}</strong>
+            </div>
+            <div style={{fontSize: '12px', color: '#666'}}>
+              {(() => {
+                const stats = allTableData.reduce((acc, row) => {
+                  acc[row.status] = (acc[row.status] || 0) + 1;
+                  return acc;
+                }, {});
+                
+                const total = allTableData.length;
+                const changed = (stats.added || 0) + (stats.removed || 0) + (stats.changed || 0);
+                
+                if (changed === 0) {
+                  return `All ${total} sections are identical`;
+                }
+                
+                const parts = [];
+                if (stats.added) parts.push(`${stats.added} added`);
+                if (stats.changed) parts.push(`${stats.changed} modified`);
+                if (stats.removed) parts.push(`${stats.removed} removed`);
+                if (stats.unchanged) parts.push(`${stats.unchanged} unchanged`);
+                
+                return `${changed}/${total} sections changed: ${parts.join(', ')}`;
+              })()}
+            </div>
+          </div>
         </div>
 
         {mode==='documents' && (
@@ -2527,7 +2848,47 @@ function ComparePanel({ docs, base, targetId, onSelectTarget, onClose }){
         {viewMode === 'diff' && (
           <div className="panel" style={{marginTop:8}}>
             <div className="body">
-              <b>Compared table (by section)</b>
+              <div className="hstack" style={{justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+                <b>Compared table (by section)</b>
+                <div className="hstack" style={{gap:8}}>
+                  <label style={{fontSize:'12px', display:'flex', alignItems:'center', gap:'4px'}}>
+                    <input 
+                      type="checkbox" 
+                      checked={showOnlyChanges}
+                      onChange={e => setShowOnlyChanges(e.target.checked)}
+                    />
+                    Show only changes
+                  </label>
+                </div>
+              </div>
+              
+              {showOnlyChanges && table.length === 0 && (
+                <div style={{
+                  padding: '20px', 
+                  textAlign: 'center', 
+                  backgroundColor: '#e8f5e8', 
+                  borderRadius: '6px',
+                  margin: '8px 0',
+                  border: '1px solid #c3e6cb'
+                }}>
+                  ✅ <strong>No Changes Detected</strong><br/>
+                  <small style={{color: '#666'}}>The selected versions are identical</small>
+                </div>
+              )}
+              
+              {showOnlyChanges && table.length > 0 && (
+                <div style={{
+                  padding: '8px 12px', 
+                  backgroundColor: '#fff3cd', 
+                  borderRadius: '4px',
+                  margin: '8px 0',
+                  fontSize: '13px',
+                  border: '1px solid #ffeaa7'
+                }}>
+                  🔍 Showing only {table.length} changed section{table.length !== 1 ? 's' : ''} out of {allTableData.length} total
+                </div>
+              )}
+              
               <table style={{marginTop:8, fontSize:'1.1em', width:'100%'}}>
                 <thead>
                   <tr><th>Section</th><th>Status</th><th>Diff</th></tr>
