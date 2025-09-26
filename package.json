@@ -1,0 +1,29 @@
+{
+  "name": "lexuz-lite",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ckeditor/ckeditor5-build-classic": "^41.4.2",
+    "@ckeditor/ckeditor5-react": "^11.0.0",
+    "diff": "^7.0.0",
+    "draft-js": "^0.11.7",
+    "draftjs-to-html": "^0.9.1",
+    "html-to-draftjs": "^1.5.0",
+    "mammoth": "^1.11.0",
+    "quill-better-table": "^1.2.10",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-draft-wysiwyg": "^1.15.0",
+    "react-quill": "^2.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^7.1.6"
+  }
+}
