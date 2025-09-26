@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { CKEditor } from '@ckeditor/ckeditor5-react';
 import ClassicEditor from '@ckeditor/ckeditor5-build-classic';
 import * as Diff from 'diff'
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx'
+import { saveAs } from 'file-saver'
 
 const TYPES = ['Policy','Procedure','Regulation']
 const STATUSES = ['Draft','Under Review','Active','Archived']
@@ -68,12 +70,7 @@ function ComparativeDiffBlock({ before, after, showFull = false }) {
   const beforeText = before ? before.replace(/<[^>]*>?/gm, '') : '';
   const afterText = after ? after.replace(/<[^>]*>?/gm, '') : '';
   
-  // Debug logging - remove in production
-  console.log('ComparativeDiffBlock:', { 
-    beforeText: beforeText.substring(0, 100), 
-    afterText: afterText.substring(0, 100),
-    hasData: !!beforeText || !!afterText 
-  });
+
   
   const parts = Diff.diffWords(beforeText, afterText);
   const hasChanges = parts.some(p => p.added || p.removed);
@@ -186,9 +183,19 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
   }
   
   const getRowStatus = (row) => {
-    if (!row.before && row.after) return 'added';
-    if (row.before && !row.after) return 'removed';
-    if (row.before && row.after && row.before !== row.after) return 'changed';
+    // Clean up HTML and whitespace for better comparison
+    const cleanText = (text) => {
+      if (!text) return '';
+      return text.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    };
+    
+    const cleanBefore = cleanText(row.before);
+    const cleanAfter = cleanText(row.after);
+    
+    if (!cleanBefore && !cleanAfter) return 'unchanged';
+    if (!cleanBefore && cleanAfter) return 'added';
+    if (cleanBefore && !cleanAfter) return 'removed';
+    if (cleanBefore !== cleanAfter) return 'changed';
     return 'unchanged';
   }
   
@@ -213,12 +220,7 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
   
   const comparisonData = compareSections(oldVersion.sections, newVersion.sections)
   
-  // Debug logging
-  console.log('ComparativeTable Data:', {
-    oldVersion: oldVersion?.sections?.slice(0, 2),
-    newVersion: newVersion?.sections?.slice(0, 2),
-    comparisonData: comparisonData.slice(0, 3)
-  });
+
   
   // Calculate summary statistics
   const summary = comparisonData.reduce((acc, row) => {
@@ -1355,6 +1357,208 @@ export default function App(){
     };
     reader.readAsArrayBuffer(file);
   }
+
+  // Export Word Document function
+  async function exportToWord(doc) {
+    try {
+      const latestVersion = doc.versions[doc.versions.length - 1];
+      const sections = latestVersion.sections || [];
+
+      // Create document title
+      const titleParagraph = new Paragraph({
+        text: doc.title || 'Untitled Document',
+        heading: HeadingLevel.TITLE,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 400 }
+      });
+
+      // Create document info
+      const infoParagraphs = [
+        new Paragraph({
+          children: [
+            new TextRun({ text: "Document Code: ", bold: true }),
+            new TextRun({ text: doc.code || 'N/A' })
+          ],
+          spacing: { after: 200 }
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({ text: "Type: ", bold: true }),
+            new TextRun({ text: doc.type || 'N/A' })
+          ],
+          spacing: { after: 200 }
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({ text: "Department: ", bold: true }),
+            new TextRun({ text: doc.department || 'N/A' })
+          ],
+          spacing: { after: 200 }
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({ text: "Status: ", bold: true }),
+            new TextRun({ text: doc.status || 'Draft' })
+          ],
+          spacing: { after: 200 }
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({ text: "Version: ", bold: true }),
+            new TextRun({ text: latestVersion.version || 'v1.0' })
+          ],
+          spacing: { after: 400 }
+        })
+      ];
+
+      // Create section paragraphs
+      const sectionParagraphs = [];
+      sections.forEach((section, index) => {
+        // Section heading
+        sectionParagraphs.push(
+          new Paragraph({
+            text: section.key || `Section ${index + 1}`,
+            heading: HeadingLevel.HEADING_1,
+            spacing: { before: 400, after: 200 }
+          })
+        );
+
+        // Section content - convert HTML to plain text and create paragraphs
+        let content = section.text || '';
+        
+        if (!content.trim()) {
+          sectionParagraphs.push(
+            new Paragraph({
+              text: 'No content',
+              italics: true,
+              spacing: { after: 400 }
+            })
+          );
+        } else {
+          // Better HTML processing - preserve line breaks and structure
+          content = content
+            .replace(/<br\s*\/?>/gi, '\n')  // Convert <br> to line breaks
+            .replace(/<\/p>/gi, '\n\n')     // Convert </p> to double line breaks
+            .replace(/<p[^>]*>/gi, '')      // Remove <p> tags
+            .replace(/<[^>]*>/g, '')        // Remove all other HTML tags
+            .replace(/\n\s*\n\s*\n/g, '\n\n') // Clean up excessive line breaks
+            .trim();
+
+          const contentLines = content.split('\n').filter(line => line.trim());
+          
+          contentLines.forEach((line, lineIndex) => {
+            const trimmedLine = line.trim();
+            if (trimmedLine) {
+              // Check if line might be a heading (starts with number or is all caps)
+              const isHeading = /^(\d+\.|\d+\)|\w+\.|[A-Z\s]{3,}:)/.test(trimmedLine) || 
+                               (trimmedLine.length < 50 && trimmedLine === trimmedLine.toUpperCase());
+              
+              sectionParagraphs.push(
+                new Paragraph({
+                  text: trimmedLine,
+                  spacing: { after: isHeading ? 200 : 120 },
+                  ...(isHeading && { heading: HeadingLevel.HEADING_2 })
+                })
+              );
+            } else {
+              // Add empty line for spacing
+              sectionParagraphs.push(
+                new Paragraph({
+                  text: '',
+                  spacing: { after: 120 }
+                })
+              );
+            }
+          });
+        }
+      });
+
+      // Create the Word document
+      const wordDoc = new Document({
+        sections: [{
+          properties: {},
+          children: [
+            titleParagraph,
+            ...infoParagraphs,
+            ...sectionParagraphs
+          ]
+        }]
+      });
+
+      // Generate and save the document
+      const buffer = await Packer.toBuffer(wordDoc);
+      
+      // Create a clean filename
+      const cleanTitle = (doc.title || 'Document')
+        .replace(/[^a-zA-Z0-9\s-_]/g, '') // Remove special characters
+        .replace(/\s+/g, '_') // Replace spaces with underscores
+        .substring(0, 50); // Limit length
+      
+      const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+      const filename = `${cleanTitle}_${latestVersion.version || 'v1.0'}_${timestamp}.docx`;
+      
+      saveAs(new Blob([buffer]), filename);
+      
+      // Add audit log
+      addAudit('export_word', doc.id, { filename });
+
+      // Success notification
+      const notification = document.createElement('div');
+      notification.innerHTML = `
+        <div style="
+          position: fixed; 
+          top: 20px; 
+          right: 20px; 
+          background: #d1e7dd; 
+          color: #0a3622; 
+          padding: 12px 16px; 
+          border-radius: 8px; 
+          box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+          z-index: 10000;
+          font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+          font-size: 14px;
+          max-width: 350px;
+        ">
+          ✅ <strong>Export Successful!</strong><br>
+          <small>Downloaded: ${filename}</small>
+        </div>
+      `;
+      document.body.appendChild(notification);
+      setTimeout(() => {
+        notification.remove();
+      }, 5000);
+
+    } catch (error) {
+      console.error('Export failed:', error);
+      
+      // Error notification
+      const notification = document.createElement('div');
+      notification.innerHTML = `
+        <div style="
+          position: fixed; 
+          top: 20px; 
+          right: 20px; 
+          background: #f8d7da; 
+          color: #721c24; 
+          padding: 12px 16px; 
+          border-radius: 8px; 
+          box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+          z-index: 10000;
+          font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+          font-size: 14px;
+          max-width: 350px;
+        ">
+          ❌ <strong>Export Failed</strong><br>
+          <small>Please try again or check the console for details.</small>
+        </div>
+      `;
+      document.body.appendChild(notification);
+      setTimeout(() => {
+        notification.remove();
+      }, 5000);
+    }
+  }
+
   const [docs, setDocs] = useState([])
   const [audit, setAudit] = useState([])
   const [q, setQ] = useState('')
@@ -1507,6 +1711,7 @@ export default function App(){
             <input type="file" accept="application/json" onChange={onImport} style={{display:'none'}} />
           </label>
           <button className="btn" onClick={exportJSON}>Export JSON</button>
+          <button className="btn" onClick={() => selected && exportToWord(selected)} disabled={!selected}>Export Word</button>
           <button className="btn ghost" onClick={()=>setShowComparativeTable(true)}>Comparative Table</button>
           <button className="btn ghost" onClick={()=>setShowChapterManager(true)}>Manage Chapters</button>
           <button className="btn primary" onClick={()=>newDoc('Policy')}>New</button>
@@ -1522,50 +1727,19 @@ export default function App(){
           <span style={{marginLeft:8, color:'#888', fontSize:12}}>Upload a ready Word (.docx) file to create a new document.</span>
         </div>
         <div style={{marginBottom:16}}>
-          <label className="btn primary" style={{cursor:'pointer'}}>
-            Upload Word Document
-            <input type="file" accept=".docx" style={{display:'none'}} onChange={async (e) => {
-              setUploadError('');
-              try {
-                const file = e.target.files[0];
-                if (!file) return;
-                const mammoth = await import('mammoth');
-                const reader = new FileReader();
-                reader.onload = async function(evt) {
-                  try {
-                    const arrayBuffer = evt.target.result;
-                    const result = await mammoth.convertToHtml({arrayBuffer});
-                    // Create a new document with only one section
-                    const newDoc = {
-                      id: uid(), code: '', title: 'Imported Word Document',
-                      type: 'Policy', department: '', tags: [], status: 'Draft',
-                      effectiveDate: '', createdAt: now(), updatedAt: now(),
-                      versions: [{
-                        id: uid(), version: 'v1.0', createdAt: now(),
-                        sections: [{ key: 'Imported Content', text: result.value }]
-                      }],
-                      comments: []
-                    };
-                    setDocs(ds => [newDoc, ...ds]);
-                    setSelected(newDoc);
-                    addAudit('import_word', newDoc.id, { filename: file.name });
-                  } catch (err) {
-                    setUploadError('Failed to process Word file. Please try a different file or format.');
-                  }
-                };
-                reader.onerror = function() {
-                  setUploadError('Failed to read the file.');
-                };
-                reader.readAsArrayBuffer(file);
-              } catch (err) {
-                setUploadError('Upload failed. Please check your file and try again.');
-              }
-            }} />
-          </label>
-          <span style={{marginLeft:8, color:'#888', fontSize:12}}>Upload a ready Word (.docx) file to create a new document. All content will be in one section and you do not need to fill all sections.</span>
-          {uploadError && (
-            <div style={{color:'red', marginTop:8}}>{uploadError}</div>
-          )}
+          <button 
+            className="btn primary" 
+            onClick={() => selected && exportToWord(selected)} 
+            disabled={!selected}
+            style={{opacity: selected ? 1 : 0.6}}
+          >
+            📥 Export Word Document
+          </button>
+          <span style={{marginLeft:8, color:'#888', fontSize:12}}>
+            {selected 
+              ? `Export "${selected.title}" as a Word (.docx) document with all sections and formatting.`
+              : 'Select a document to export as Word (.docx) file.'}
+          </span>
         </div>
         <div className="grid grid-4">
           {/* Filters */}
@@ -1618,8 +1792,8 @@ export default function App(){
                         <div className="toolbar">
                           <button className="btn ghost" onClick={()=>{setSelected(d)}}>Open</button>
                           <button className="btn ghost" onClick={()=>{setSelected(d)}}>Edit</button>
-                          <button className="btn ghost" onClick={()=> { setSelectedDocForChapter(d); setShowChapterManager(true) }}>Add Chapter</button>
                           <button className="btn ghost" onClick={()=>{ setSelected(d); setShowCompare(true); setCompareTargetId(null) }}>Compare</button>
+                          <button className="btn ghost" onClick={()=>exportToWord(d)} title="Export as Word document">📥 Export</button>
                           <button className="btn danger" onClick={()=>deleteDoc(d.id)}>Delete</button>
                         </div>
                       </td>
@@ -2215,52 +2389,82 @@ function TagEditor({ value, onChange }){
 }
 
 function DiffBlock({ before, after }){
-  const parts = Diff.diffWords(before||'', after||'')
+  // Clean HTML tags from both texts for comparison
+  const beforeText = (before || '').replace(/<[^>]*>?/gm, '').trim()
+  const afterText = (after || '').replace(/<[^>]*>?/gm, '').trim()
+  
+  const parts = Diff.diffWords(beforeText, afterText)
   const hasChanges = parts.some(p => p.added || p.removed)
   
+  // If no content in either version
+  if (!beforeText && !afterText) {
+    return (
+      <div style={{lineHeight:'1.6', padding: '8px', backgroundColor: '#f8f9fa', borderRadius: '4px'}}>
+        <span style={{color: '#6c757d', fontStyle: 'italic'}}>No content in either version</span>
+      </div>
+    )
+  }
+  
+  // If identical content
+  if (!hasChanges) {
+    return (
+      <div style={{lineHeight:'1.6', padding: '8px', backgroundColor: '#f8f9fa', borderRadius: '4px'}}>
+        <div style={{marginBottom: '4px', fontSize: '11px', color: '#28a745', fontWeight: 'bold'}}>
+          ✓ IDENTICAL CONTENT
+        </div>
+        <div style={{color: '#495057', fontSize: '13px'}}>
+          {beforeText.length > 100 ? beforeText.substring(0, 100) + '...' : beforeText}
+        </div>
+      </div>
+    )
+  }
+  
+  // Show detailed diff
   return (
     <div style={{lineHeight:'1.6', padding: '8px', backgroundColor: '#f8f9fa', borderRadius: '4px'}}>
-      {!hasChanges ? (
-        <span style={{color: '#6c757d', fontStyle: 'italic'}}>No changes</span>
-      ) : (
-        <>
-          <div style={{marginBottom: '8px', fontSize: '12px', fontWeight: 'bold', color: '#495057'}}>
-            📋 Changes Summary:
-          </div>
-          {parts.map((p,i) => {
-            if (p.added) {
-              return (
-                <span key={i} style={{
-                  backgroundColor: '#d1e7dd',
-                  color: '#0f5132',
-                  fontWeight: 'bold',
-                  padding: '2px 4px',
-                  borderRadius: '3px',
-                  margin: '0 1px'
-                }}>
-                  ✅ {p.value}
-                </span>
-              )
-            } else if (p.removed) {
-              return (
-                <span key={i} style={{
-                  backgroundColor: '#f8d7da',
-                  color: '#842029',
-                  fontWeight: 'bold',
-                  padding: '2px 4px',
-                  borderRadius: '3px',
-                  margin: '0 1px',
-                  textDecoration: 'line-through'
-                }}>
-                  ❌ {p.value}
-                </span>
-              )
-            } else {
-              return <span key={i} style={{color: '#495057'}}>{p.value}</span>
-            }
-          })}
-        </>
-      )}
+      <div style={{marginBottom: '8px', fontSize: '12px', fontWeight: 'bold', color: '#495057'}}>
+        🔍 CHANGES DETECTED:
+      </div>
+      <div style={{fontSize: '13px'}}>
+        {parts.map((p,i) => {
+          if (p.added) {
+            return (
+              <span key={i} style={{
+                backgroundColor: '#d1e7dd',
+                color: '#0f5132',
+                fontWeight: 'bold',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                margin: '0 2px',
+                display: 'inline-block',
+                border: '1px solid #badbcc'
+              }}>
+                ✅ {p.value}
+              </span>
+            )
+          } else if (p.removed) {
+            return (
+              <span key={i} style={{
+                backgroundColor: '#f8d7da',
+                color: '#842029',
+                fontWeight: 'bold',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                margin: '0 2px',
+                textDecoration: 'line-through',
+                display: 'inline-block',
+                border: '1px solid #f5c2c7'
+              }}>
+                ❌ {p.value}
+              </span>
+            )
+          } else {
+            // Show unchanged text with limited length
+            const displayText = p.value.length > 50 ? p.value.substring(0, 50) + '...' : p.value
+            return <span key={i} style={{color: '#495057'}}>{displayText}</span>
+          }
+        })}
+      </div>
     </div>
   )
 }
@@ -2332,30 +2536,32 @@ function ComparePanel({ docs, base, targetId, onSelectTarget, onClose }){
                   {table.map((row, index) => {
                     const getStatusStyle = (status) => {
                       switch(status) {
-                        case 'added': return {color: '#28a745', fontWeight: 'bold', backgroundColor: '#d1e7dd', padding: '4px 8px', borderRadius: '12px'};
-                        case 'removed': return {color: '#dc3545', fontWeight: 'bold', backgroundColor: '#f8d7da', padding: '4px 8px', borderRadius: '12px'};
-                        case 'changed': return {color: '#ffc107', fontWeight: 'bold', backgroundColor: '#fff3cd', padding: '4px 8px', borderRadius: '12px'};
-                        default: return {color: '#6c757d', fontWeight: 'normal'};
+                        case 'added': return {color: '#155724', fontWeight: 'bold', backgroundColor: '#d1e7dd', padding: '6px 12px', borderRadius: '16px', border: '1px solid #c3e6cb'};
+                        case 'removed': return {color: '#721c24', fontWeight: 'bold', backgroundColor: '#f8d7da', padding: '6px 12px', borderRadius: '16px', border: '1px solid #f5c6cb'};
+                        case 'changed': return {color: '#856404', fontWeight: 'bold', backgroundColor: '#fff3cd', padding: '6px 12px', borderRadius: '16px', border: '1px solid #ffeaa7'};
+                        default: return {color: '#6c757d', fontWeight: 'normal', backgroundColor: '#e9ecef', padding: '6px 12px', borderRadius: '16px'};
                       }
                     };
                     
                     return (
                       <tr key={row.section} style={row.status==='changed' ? {background:'#fffbe6'} : row.status==='added' ? {background: '#e8f5e8'} : row.status==='removed' ? {background: '#ffe8e8'} : {}}>
-                        <td style={{whiteSpace:'nowrap', verticalAlign: 'top', padding: '12px'}}>
-                          <span style={{color: '#007bff', fontWeight: '600', marginRight: '8px'}}>
-                            {`1.${index + 1}.`}
-                          </span>
-                          <strong>{row.section}</strong>
+                        <td style={{whiteSpace:'nowrap', verticalAlign: 'top', padding: '12px', minWidth: '200px'}}>
+                          <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                            <span style={{color: '#007bff', fontWeight: '600', fontSize: '14px'}}>
+                              {`${index + 1}.`}
+                            </span>
+                            <strong style={{fontSize: '14px'}}>{row.section}</strong>
+                          </div>
                         </td>
-                        <td style={{verticalAlign: 'top', padding: '12px'}}>
+                        <td style={{verticalAlign: 'top', padding: '12px', textAlign: 'center', minWidth: '120px'}}>
                           <span style={getStatusStyle(row.status)}>
-                            {row.status === 'added' && '✅ Added'}
-                            {row.status === 'removed' && '❌ Removed'}
-                            {row.status === 'changed' && '🔄 Changed'}
-                            {row.status === 'unchanged' && '✓ No changes'}
+                            {row.status === 'added' && '✅ ADDED'}
+                            {row.status === 'removed' && '❌ REMOVED'}
+                            {row.status === 'changed' && '🔄 CHANGED'}
+                            {row.status === 'unchanged' && '✓ UNCHANGED'}
                           </span>
                         </td>
-                        <td style={{verticalAlign: 'top', padding: '12px'}}>
+                        <td style={{verticalAlign: 'top', padding: '12px', width: '60%'}}>
                           <DiffBlock before={row.before} after={row.after} />
                         </td>
                       </tr>
