@@ -61,6 +61,745 @@ function compareSections(a, b){
     return { section: key, status, before: av, after: bv }
   })
 }
+
+// New Comparative Table Component
+function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
+  const [localComments, setLocalComments] = useState(comments)
+  
+  const addComment = (sectionKey, comment) => {
+    const newComment = {
+      id: uid(),
+      sectionKey,
+      comment,
+      timestamp: now()
+    }
+    setLocalComments(prev => [...prev, newComment])
+  }
+  
+  const updateComment = (sectionKey, comment) => {
+    // For now, just add to existing comments. You can extend this to update existing ones
+    if (comment.trim()) {
+      addComment(sectionKey, comment)
+    }
+  }
+  
+  const getSectionComment = (sectionKey) => {
+    const comments = localComments.filter(c => c.sectionKey === sectionKey)
+    return comments.length > 0 ? comments[comments.length - 1].comment : ''
+  }
+  
+  if (!oldVersion || !newVersion) {
+    return (
+      <div className="panel">
+        <div className="body">
+          <div className="muted">Please select both old and new versions to compare</div>
+        </div>
+      </div>
+    )
+  }
+  
+  const comparisonData = compareSections(oldVersion.sections, newVersion.sections)
+  
+  return (
+    <div style={{ 
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'white',
+      zIndex: 1000,
+      overflow: 'auto',
+      padding: '20px'
+    }}>
+      {/* Header */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: '30px',
+        borderBottom: '1px solid #e0e0e0',
+        paddingBottom: '20px'
+      }}>
+        <h1 style={{ 
+          fontSize: '24px', 
+          fontWeight: '600', 
+          color: '#333',
+          margin: 0
+        }}>
+          Comparative Table (Old vs New Version)
+        </h1>
+        <button 
+          onClick={onClose} 
+          style={{
+            backgroundColor: 'transparent',
+            border: 'none',
+            color: '#dc3545',
+            fontSize: '16px',
+            fontWeight: '500',
+            cursor: 'pointer',
+            padding: '8px 16px'
+          }}
+        >
+          Close
+        </button>
+      </div>
+      
+      {/* Table */}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ 
+          width: '100%', 
+          borderCollapse: 'collapse', 
+          fontSize: '14px',
+          backgroundColor: 'white',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+        }}>
+          <thead>
+            <tr style={{ backgroundColor: '#f8f9fa' }}>
+              <th style={{ 
+                border: '1px solid #dee2e6', 
+                padding: '16px 12px', 
+                textAlign: 'left',
+                width: '25%',
+                fontWeight: '600',
+                color: '#495057',
+                fontSize: '14px'
+              }}>
+                Section
+              </th>
+              <th style={{ 
+                border: '1px solid #dee2e6', 
+                padding: '16px 12px', 
+                textAlign: 'left',
+                width: '25%',
+                fontWeight: '600',
+                color: '#495057',
+                fontSize: '14px',
+                position: 'relative'
+              }}>
+                Old Version 
+                <span style={{ 
+                  marginLeft: '8px',
+                  fontSize: '12px',
+                  color: '#6c757d'
+                }}>🔒</span>
+              </th>
+              <th style={{ 
+                border: '1px solid #dee2e6', 
+                padding: '16px 12px', 
+                textAlign: 'left',
+                width: '25%',
+                fontWeight: '600',
+                color: '#495057',
+                fontSize: '14px'
+              }}>
+                New Version
+              </th>
+              <th style={{ 
+                border: '1px solid #dee2e6', 
+                padding: '16px 12px', 
+                textAlign: 'left',
+                width: '25%',
+                fontWeight: '600',
+                color: '#495057',
+                fontSize: '14px'
+              }}>
+                Comment
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {comparisonData.map((row, index) => {
+              return (
+                <tr key={row.section} style={{ backgroundColor: 'white' }}>
+                  <td style={{ 
+                    border: '1px solid #dee2e6', 
+                    padding: '16px 12px',
+                    verticalAlign: 'top',
+                    fontWeight: '500',
+                    color: '#212529'
+                  }}>
+                    {row.section}
+                  </td>
+                  <td style={{ 
+                    border: '1px solid #dee2e6', 
+                    padding: '16px 12px',
+                    verticalAlign: 'top',
+                    position: 'relative'
+                  }}>
+                    <div style={{ 
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      color: '#495057'
+                    }}>
+                      {row.before ? (
+                        <div>{row.before.replace(/<[^>]*>?/gm, '').substring(0, 100) + (row.before.length > 100 ? '...' : '')}</div>
+                      ) : (
+                        <span style={{ color: '#6c757d', fontStyle: 'italic' }}>No content</span>
+                      )}
+                    </div>
+                    {row.before && (
+                      <span style={{ 
+                        position: 'absolute',
+                        top: '12px',
+                        right: '12px',
+                        fontSize: '12px',
+                        color: '#6c757d'
+                      }}>🔒</span>
+                    )}
+                  </td>
+                  <td style={{ 
+                    border: '1px solid #dee2e6', 
+                    padding: '16px 12px',
+                    verticalAlign: 'top'
+                  }}>
+                    <div style={{ 
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      color: '#495057'
+                    }}>
+                      {row.after ? (
+                        <div>{row.after.replace(/<[^>]*>?/gm, '').substring(0, 100) + (row.after.length > 100 ? '...' : '')}</div>
+                      ) : (
+                        <span style={{ color: '#6c757d', fontStyle: 'italic' }}>No content</span>
+                      )}
+                    </div>
+                  </td>
+                  <td style={{ 
+                    border: '1px solid #dee2e6', 
+                    padding: '16px 12px',
+                    verticalAlign: 'top'
+                  }}>
+                    <textarea
+                      placeholder="Add comment..."
+                      defaultValue={getSectionComment(row.section)}
+                      onBlur={(e) => updateComment(row.section, e.target.value)}
+                      style={{
+                        width: '100%',
+                        minHeight: '60px',
+                        border: '1px solid #ced4da',
+                        borderRadius: '4px',
+                        padding: '8px 12px',
+                        fontSize: '13px',
+                        fontFamily: 'inherit',
+                        resize: 'vertical',
+                        backgroundColor: '#ffffff',
+                        color: '#495057'
+                      }}
+                    />
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// Comment Input Component
+function CommentInput({ onAddComment }) {
+  const [comment, setComment] = useState('')
+  
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (comment.trim()) {
+      onAddComment(comment.trim())
+      setComment('')
+    }
+  }
+  
+  return (
+    <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '4px' }}>
+      <input
+        type="text"
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="Add comment..."
+        style={{
+          flex: 1,
+          padding: '4px 8px',
+          border: '1px solid #ddd',
+          borderRadius: '3px',
+          fontSize: '12px'
+        }}
+      />
+      <button 
+        type="submit"
+        style={{
+          padding: '4px 8px',
+          backgroundColor: '#1890ff',
+          color: 'white',
+          border: 'none',
+          borderRadius: '3px',
+          fontSize: '12px',
+          cursor: 'pointer'
+        }}
+      >
+        +
+      </button>
+    </form>
+  )
+}
+
+// Standalone Comparative Table Panel
+function ComparativeTablePanel({ docs, onClose }) {
+  const [selectedDoc1, setSelectedDoc1] = useState(docs[0]?.id || '')
+  const [selectedDoc2, setSelectedDoc2] = useState(docs[1]?.id || docs[0]?.id || '')
+  const [selectedVersion1, setSelectedVersion1] = useState('')
+  const [selectedVersion2, setSelectedVersion2] = useState('')
+  
+  const doc1 = docs.find(d => d.id === selectedDoc1)
+  const doc2 = docs.find(d => d.id === selectedDoc2)
+  
+  const version1 = doc1?.versions.find(v => v.id === selectedVersion1) || doc1?.versions[0]
+  const version2 = doc2?.versions.find(v => v.id === selectedVersion2) || doc2?.versions[doc2?.versions.length - 1]
+  
+  useEffect(() => {
+    if (doc1 && !selectedVersion1) {
+      setSelectedVersion1(doc1.versions[0]?.id || '')
+    }
+  }, [doc1, selectedVersion1])
+  
+  useEffect(() => {
+    if (doc2 && !selectedVersion2) {
+      setSelectedVersion2(doc2.versions[doc2.versions.length - 1]?.id || '')
+    }
+  }, [doc2, selectedVersion2])
+  
+  if (version1 && version2) {
+    return (
+      <ComparativeTableWithSelection 
+        oldVersion={version1}
+        newVersion={version2}
+        docs={docs}
+        selectedDoc1={selectedDoc1}
+        selectedDoc2={selectedDoc2}
+        selectedVersion1={selectedVersion1}
+        selectedVersion2={selectedVersion2}
+        onDocChange={(docNum, docId) => docNum === 1 ? setSelectedDoc1(docId) : setSelectedDoc2(docId)}
+        onVersionChange={(docNum, versionId) => docNum === 1 ? setSelectedVersion1(versionId) : setSelectedVersion2(versionId)}
+        onClose={onClose}
+        comments={[]}
+      />
+    )
+  }
+  
+  return (
+    <div className="panel" style={{
+      position: 'fixed', 
+      left: 8, 
+      right: 8, 
+      top: 8, 
+      bottom: 8, 
+      overflow: 'auto', 
+      zIndex: 1000,
+      maxWidth: '100vw'
+    }}>
+      <div className="body">
+        <div className="hstack" style={{ justifyContent: 'space-between', marginBottom: 16 }}>
+          <b>Comparative Analysis Table</b>
+          <button className="btn ghost" onClick={onClose}>Close</button>
+        </div>
+        
+        <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+          <div>
+            <label className="muted" style={{ marginBottom: 8, display: 'block' }}>Select First Document</label>
+            <select 
+              className="input select" 
+              value={selectedDoc1} 
+              onChange={e => setSelectedDoc1(e.target.value)}
+            >
+              {docs.map(doc => (
+                <option key={doc.id} value={doc.id}>{doc.title}</option>
+              ))}
+            </select>
+            {doc1 && (
+              <select 
+                className="input select" 
+                style={{ marginTop: 8 }}
+                value={selectedVersion1} 
+                onChange={e => setSelectedVersion1(e.target.value)}
+              >
+                {doc1.versions.map(version => (
+                  <option key={version.id} value={version.id}>{version.version}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          
+          <div>
+            <label className="muted" style={{ marginBottom: 8, display: 'block' }}>Select Second Document</label>
+            <select 
+              className="input select" 
+              value={selectedDoc2} 
+              onChange={e => setSelectedDoc2(e.target.value)}
+            >
+              {docs.map(doc => (
+                <option key={doc.id} value={doc.id}>{doc.title}</option>
+              ))}
+            </select>
+            {doc2 && (
+              <select 
+                className="input select" 
+                style={{ marginTop: 8 }}
+                value={selectedVersion2} 
+                onChange={e => setSelectedVersion2(e.target.value)}
+              >
+                {doc2.versions.map(version => (
+                  <option key={version.id} value={version.id}>{version.version}</option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
+        
+        <div className="panel">
+          <div className="body">
+            <div className="muted">Please select documents and versions to compare</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+
+// Enhanced Comparative Table with Selection Controls
+function ComparativeTableWithSelection({ 
+  oldVersion, 
+  newVersion, 
+  docs, 
+  selectedDoc1, 
+  selectedDoc2, 
+  selectedVersion1, 
+  selectedVersion2,
+  onDocChange,
+  onVersionChange,
+  onClose,
+  comments = [] 
+}) {
+  const [localComments, setLocalComments] = useState(comments)
+  
+  const addComment = (sectionKey, comment) => {
+    const newComment = {
+      id: uid(),
+      sectionKey,
+      comment,
+      timestamp: now()
+    }
+    setLocalComments(prev => [...prev, newComment])
+  }
+  
+  const updateComment = (sectionKey, comment) => {
+    if (comment.trim()) {
+      addComment(sectionKey, comment)
+    }
+  }
+  
+  const getSectionComment = (sectionKey) => {
+    const comments = localComments.filter(c => c.sectionKey === sectionKey)
+    return comments.length > 0 ? comments[comments.length - 1].comment : ''
+  }
+  
+  const comparisonData = compareSections(oldVersion.sections, newVersion.sections)
+  const doc1 = docs.find(d => d.id === selectedDoc1)
+  const doc2 = docs.find(d => d.id === selectedDoc2)
+  
+  return (
+    <div style={{ 
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'white',
+      zIndex: 1000,
+      overflow: 'auto',
+      padding: '20px'
+    }}>
+      {/* Header with Controls */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: '20px',
+        borderBottom: '1px solid #e0e0e0',
+        paddingBottom: '20px'
+      }}>
+        <h1 style={{ 
+          fontSize: '24px', 
+          fontWeight: '600', 
+          color: '#333',
+          margin: 0
+        }}>
+          Comparative Table (Old vs New Version)
+        </h1>
+        <button 
+          onClick={onClose} 
+          style={{
+            backgroundColor: 'transparent',
+            border: 'none',
+            color: '#dc3545',
+            fontSize: '16px',
+            fontWeight: '500',
+            cursor: 'pointer',
+            padding: '8px 16px'
+          }}
+        >
+          Close
+        </button>
+      </div>
+      
+      {/* Selection Controls */}
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: '1fr 1fr', 
+        gap: '20px', 
+        marginBottom: '30px',
+        padding: '16px',
+        backgroundColor: '#f8f9fa',
+        borderRadius: '8px'
+      }}>
+        <div>
+          <label style={{ 
+            display: 'block', 
+            marginBottom: '8px', 
+            fontWeight: '500',
+            color: '#495057'
+          }}>
+            Old Version Document
+          </label>
+          <select 
+            value={selectedDoc1} 
+            onChange={e => onDocChange(1, e.target.value)}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              border: '1px solid #ced4da',
+              borderRadius: '4px',
+              marginBottom: '8px'
+            }}
+          >
+            {docs.map(doc => (
+              <option key={doc.id} value={doc.id}>{doc.title}</option>
+            ))}
+          </select>
+          {doc1 && (
+            <select 
+              value={selectedVersion1} 
+              onChange={e => onVersionChange(1, e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #ced4da',
+                borderRadius: '4px'
+              }}
+            >
+              {doc1.versions.map(version => (
+                <option key={version.id} value={version.id}>{version.version}</option>
+              ))}
+            </select>
+          )}
+        </div>
+        
+        <div>
+          <label style={{ 
+            display: 'block', 
+            marginBottom: '8px', 
+            fontWeight: '500',
+            color: '#495057'
+          }}>
+            New Version Document
+          </label>
+          <select 
+            value={selectedDoc2} 
+            onChange={e => onDocChange(2, e.target.value)}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              border: '1px solid #ced4da',
+              borderRadius: '4px',
+              marginBottom: '8px'
+            }}
+          >
+            {docs.map(doc => (
+              <option key={doc.id} value={doc.id}>{doc.title}</option>
+            ))}
+          </select>
+          {doc2 && (
+            <select 
+              value={selectedVersion2} 
+              onChange={e => onVersionChange(2, e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #ced4da',
+                borderRadius: '4px'
+              }}
+            >
+              {doc2.versions.map(version => (
+                <option key={version.id} value={version.id}>{version.version}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+      
+      {/* Table */}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ 
+          width: '100%', 
+          borderCollapse: 'collapse', 
+          fontSize: '14px',
+          backgroundColor: 'white',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+        }}>
+          <thead>
+            <tr style={{ backgroundColor: '#f8f9fa' }}>
+              <th style={{ 
+                border: '1px solid #dee2e6', 
+                padding: '16px 12px', 
+                textAlign: 'left',
+                width: '25%',
+                fontWeight: '600',
+                color: '#495057',
+                fontSize: '14px'
+              }}>
+                Section
+              </th>
+              <th style={{ 
+                border: '1px solid #dee2e6', 
+                padding: '16px 12px', 
+                textAlign: 'left',
+                width: '25%',
+                fontWeight: '600',
+                color: '#495057',
+                fontSize: '14px',
+                position: 'relative'
+              }}>
+                Old Version 
+                <span style={{ 
+                  marginLeft: '8px',
+                  fontSize: '12px',
+                  color: '#6c757d'
+                }}>🔒</span>
+              </th>
+              <th style={{ 
+                border: '1px solid #dee2e6', 
+                padding: '16px 12px', 
+                textAlign: 'left',
+                width: '25%',
+                fontWeight: '600',
+                color: '#495057',
+                fontSize: '14px'
+              }}>
+                New Version
+              </th>
+              <th style={{ 
+                border: '1px solid #dee2e6', 
+                padding: '16px 12px', 
+                textAlign: 'left',
+                width: '25%',
+                fontWeight: '600',
+                color: '#495057',
+                fontSize: '14px'
+              }}>
+                Comment
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {comparisonData.map((row, index) => {
+              return (
+                <tr key={row.section} style={{ backgroundColor: 'white' }}>
+                  <td style={{ 
+                    border: '1px solid #dee2e6', 
+                    padding: '16px 12px',
+                    verticalAlign: 'top',
+                    fontWeight: '500',
+                    color: '#212529'
+                  }}>
+                    {row.section}
+                  </td>
+                  <td style={{ 
+                    border: '1px solid #dee2e6', 
+                    padding: '16px 12px',
+                    verticalAlign: 'top',
+                    position: 'relative'
+                  }}>
+                    <div style={{ 
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      color: '#495057'
+                    }}>
+                      {row.before ? (
+                        <div>{row.before.replace(/<[^>]*>?/gm, '').substring(0, 100) + (row.before.length > 100 ? '...' : '')}</div>
+                      ) : (
+                        <span style={{ color: '#6c757d', fontStyle: 'italic' }}>No content</span>
+                      )}
+                    </div>
+                    {row.before && (
+                      <span style={{ 
+                        position: 'absolute',
+                        top: '12px',
+                        right: '12px',
+                        fontSize: '12px',
+                        color: '#6c757d'
+                      }}>🔒</span>
+                    )}
+                  </td>
+                  <td style={{ 
+                    border: '1px solid #dee2e6', 
+                    padding: '16px 12px',
+                    verticalAlign: 'top'
+                  }}>
+                    <div style={{ 
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      color: '#495057'
+                    }}>
+                      {row.after ? (
+                        <div>{row.after.replace(/<[^>]*>?/gm, '').substring(0, 100) + (row.after.length > 100 ? '...' : '')}</div>
+                      ) : (
+                        <span style={{ color: '#6c757d', fontStyle: 'italic' }}>No content</span>
+                      )}
+                    </div>
+                  </td>
+                  <td style={{ 
+                    border: '1px solid #dee2e6', 
+                    padding: '16px 12px',
+                    verticalAlign: 'top'
+                  }}>
+                    <textarea
+                      placeholder="Add comment..."
+                      defaultValue={getSectionComment(row.section)}
+                      onBlur={(e) => updateComment(row.section, e.target.value)}
+                      style={{
+                        width: '100%',
+                        minHeight: '60px',
+                        border: '1px solid #ced4da',
+                        borderRadius: '4px',
+                        padding: '8px 12px',
+                        fontSize: '13px',
+                        fontFamily: 'inherit',
+                        resize: 'vertical',
+                        backgroundColor: '#ffffff',
+                        color: '#495057'
+                      }}
+                    />
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
 function download(filename, text){
   const a = document.createElement('a')
   const file = new Blob([text], { type: 'application/json' })
@@ -134,6 +873,7 @@ export default function App(){
   const [selected, setSelected] = useState(null)
   const [showCompare, setShowCompare] = useState(false)
   const [compareTargetId, setCompareTargetId] = useState(null)
+  const [showComparativeTable, setShowComparativeTable] = useState(false)
 
   useEffect(()=>{
     const { docs, audit } = load()
@@ -227,6 +967,7 @@ export default function App(){
             <input type="file" accept="application/json" onChange={onImport} style={{display:'none'}} />
           </label>
           <button className="btn" onClick={exportJSON}>Export JSON</button>
+          <button className="btn ghost" onClick={()=>setShowComparativeTable(true)}>Comparative Table</button>
           <button className="btn primary" onClick={()=>newDoc('Policy')}>New</button>
         </div>
       </header>
@@ -392,6 +1133,14 @@ export default function App(){
           onSelectTarget={setCompareTargetId}
         />
       )}
+
+      {/* Standalone Comparative Table */}
+      {showComparativeTable && (
+        <ComparativeTablePanel
+          docs={docs}
+          onClose={()=>setShowComparativeTable(false)}
+        />
+      )}
     </div>
   )
 }
@@ -548,6 +1297,7 @@ function DiffBlock({ before, after }){
 
 function ComparePanel({ docs, base, targetId, onSelectTarget, onClose }){
   const [mode, setMode] = useState('versions')
+  const [viewMode, setViewMode] = useState('diff') // 'diff' or 'comparative'
   const [leftId, setLeftId] = useState(base.versions[0].id)
   const [rightId, setRightId] = useState(base.versions[base.versions.length-1].id)
   const target = docs.find(d=> d.id===targetId) || base
@@ -565,6 +1315,18 @@ function ComparePanel({ docs, base, targetId, onSelectTarget, onClose }){
           <div className="hstack" style={{gap:8}}>
             <button className="btn ghost" onClick={()=>setMode('versions')}>Within one doc</button>
             <button className="btn ghost" onClick={()=>setMode('documents')}>Across documents</button>
+            <button 
+              className={`btn ${viewMode === 'diff' ? '' : 'ghost'}`} 
+              onClick={()=>setViewMode('diff')}
+            >
+              Diff View
+            </button>
+            <button 
+              className={`btn ${viewMode === 'comparative' ? '' : 'ghost'}`} 
+              onClick={()=>setViewMode('comparative')}
+            >
+              Comparative Table
+            </button>
             <button className="btn ghost" onClick={onClose}>Close</button>
           </div>
         </div>
@@ -588,29 +1350,40 @@ function ComparePanel({ docs, base, targetId, onSelectTarget, onClose }){
           </div>
         )}
 
-        <div className="panel" style={{marginTop:8}}>
-          <div className="body">
-            <b>Compared table (by section)</b>
-            <table style={{marginTop:8, fontSize:'1.1em', width:'100%'}}>
-              <thead>
-                <tr><th>Section</th><th>Status</th><th>Diff</th></tr>
-              </thead>
-              <tbody>
-                {table.map(row => (
-                  <tr key={row.section} style={row.status==='changed' ? {background:'#fffbe6'} : {}}>
-                    <td style={{whiteSpace:'nowrap'}}>{row.section}</td>
-                    <td>
-                      <span className="status" style={row.status==='changed' ? {color:'#d48806', fontWeight:'bold'} : {}}>
-                        {row.status}
-                      </span>
-                    </td>
-                    <td><DiffBlock before={row.before} after={row.after} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {viewMode === 'diff' && (
+          <div className="panel" style={{marginTop:8}}>
+            <div className="body">
+              <b>Compared table (by section)</b>
+              <table style={{marginTop:8, fontSize:'1.1em', width:'100%'}}>
+                <thead>
+                  <tr><th>Section</th><th>Status</th><th>Diff</th></tr>
+                </thead>
+                <tbody>
+                  {table.map(row => (
+                    <tr key={row.section} style={row.status==='changed' ? {background:'#fffbe6'} : {}}>
+                      <td style={{whiteSpace:'nowrap'}}>{row.section}</td>
+                      <td>
+                        <span className="status" style={row.status==='changed' ? {color:'#d48806', fontWeight:'bold'} : {}}>
+                          {row.status}
+                        </span>
+                      </td>
+                      <td><DiffBlock before={row.before} after={row.after} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        )}
+
+        {viewMode === 'comparative' && (
+          <ComparativeTable 
+            oldVersion={left} 
+            newVersion={right}
+            comments={[]} // You can extend this to persist comments
+            onClose={onClose}
+          />
+        )}
       </div>
     </div>
   )
