@@ -67,12 +67,33 @@ function compareSections(a, b){
 // New Comparative Table Component
 // Enhanced DiffBlock for Comparative Table
 function ComparativeDiffBlock({ before, after, showFull = false }) {
-  const beforeText = before ? before.replace(/<[^>]*>?/gm, '') : '';
-  const afterText = after ? after.replace(/<[^>]*>?/gm, '') : '';
-  
+  // Clean and normalize text function (same as in getRowStatus)
+  const cleanText = (text) => {
+    if (!text) return '';
+    return text
+      // Remove HTML tags
+      .replace(/<[^>]*>/g, '')
+      // Decode HTML entities
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&hellip;/g, '...')
+      // Remove all types of whitespace and formatting
+      .replace(/[\s\r\n\t_]+/g, ' ')  // Replace any whitespace, underscores with single space
+      .replace(/\s*([.,;:!?])\s*/g, '$1 ')  // Normalize punctuation spacing
+      .replace(/\s+/g, ' ')  // Collapse multiple spaces
+      .trim()
+      .toLowerCase(); // Make comparison case-insensitive
+  };
 
+  const beforeText = cleanText(before);
+  const afterText = cleanText(after);
   
-  const parts = Diff.diffWords(beforeText, afterText);
+  // Only do diff if texts are actually different after cleaning
+  const parts = beforeText === afterText ? [] : Diff.diffWords(beforeText, afterText);
   const hasChanges = parts.some(p => p.added || p.removed);
   
   // Show "No content" only if both are completely empty
@@ -184,44 +205,36 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
   }
   
   const getRowStatus = (row) => {
-    // Enhanced text cleaning for better comparison
+    // Clean and normalize text for comparison
     const cleanText = (text) => {
-      if (!text || text === null || text === undefined) return '';
-      
+      if (!text) return '';
       return text
         // Remove HTML tags
         .replace(/<[^>]*>/g, '')
-        // Remove HTML entities
-        .replace(/&[a-zA-Z0-9#]+;/g, ' ')
-        // Normalize whitespace
-        .replace(/\s+/g, ' ')
-        // Remove non-printable characters
-        .replace(/[\x00-\x1F\x7F-\x9F]/g, '')
-        // Trim and convert to lowercase for comparison
+        // Decode HTML entities
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&hellip;/g, '...')
+        // Remove all types of whitespace and formatting
+        .replace(/[\s\r\n\t_]+/g, ' ')  // Replace any whitespace, underscores with single space
+        .replace(/\s*([.,;:!?])\s*/g, '$1 ')  // Normalize punctuation spacing
+        .replace(/\s+/g, ' ')  // Collapse multiple spaces
         .trim()
         .toLowerCase();
     };
     
-    const cleanBefore = cleanText(row.before);
-    const cleanAfter = cleanText(row.after);
+    const textBefore = cleanText(row.before);
+    const textAfter = cleanText(row.after);
     
-    // More detailed comparison
-    if (!cleanBefore && !cleanAfter) return 'unchanged';
-    if (!cleanBefore && cleanAfter) return 'added';
-    if (cleanBefore && !cleanAfter) return 'removed';
-    
-    // Use a more sophisticated comparison for changes
-    if (cleanBefore !== cleanAfter) {
-      // Check if it's just minor formatting differences
-      const beforeWords = cleanBefore.split(/\s+/).filter(w => w.length > 0);
-      const afterWords = cleanAfter.split(/\s+/).filter(w => w.length > 0);
-      
-      // If word count or content significantly differs, it's changed
-      if (beforeWords.length !== afterWords.length || 
-          beforeWords.some((word, i) => word !== afterWords[i])) {
-        return 'changed';
-      }
-    }
+    // Basic comparison logic on cleaned text
+    if (!textBefore && !textAfter) return 'unchanged';
+    if (!textBefore && textAfter) return 'added';
+    if (textBefore && !textAfter) return 'removed';
+    if (textBefore !== textAfter) return 'changed';
     
     return 'unchanged';
   }
@@ -247,25 +260,12 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
   
   const allComparisonData = compareSections(oldVersion.sections, newVersion.sections)
   
-  // Filter data based on user preference - AGGRESSIVE FILTERING
+  // Filter data based on user preference - SIMPLE FILTERING
   const comparisonData = showOnlyChanges 
     ? allComparisonData.filter(row => {
         const status = getRowStatus(row);
-        
-        // Clean the content to check if it's truly empty
-        const cleanBefore = (row.before || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
-        const cleanAfter = (row.after || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
-        
-        // AGGRESSIVE: Hide if:
-        // 1. Status is unchanged 
-        // 2. Both before and after are empty
-        // 3. Both before and after are identical (even if not empty)
-        if (status === 'unchanged') return false;
-        if (!cleanBefore && !cleanAfter) return false;
-        if (cleanBefore === cleanAfter) return false;
-        
-        // Only show if there's a meaningful change
-        return status === 'added' || status === 'removed' || status === 'changed';
+        // Just show sections that have changes
+        return status !== 'unchanged';
       })
     : allComparisonData
   
@@ -279,9 +279,7 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
   // Calculate how many sections actually have changes
   const actualChanges = allComparisonData.filter(row => {
     const status = getRowStatus(row);
-    const cleanBefore = (row.before || '').replace(/<[^>]*>/g, '').trim();
-    const cleanAfter = (row.after || '').replace(/<[^>]*>/g, '').trim();
-    return status !== 'unchanged' && (cleanBefore !== cleanAfter || (!cleanBefore && cleanAfter) || (cleanBefore && !cleanAfter));
+    return status !== 'unchanged';
   }).length;
 
   return (
@@ -412,8 +410,8 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
             Comparing {allComparisonData.length} sections total
             {showOnlyChanges ? (
               comparisonData.length > 0 
-                ? ` → Showing ${comparisonData.length} sections with actual changes`
-                : ` → No changes detected between versions`
+                ? ` → Showing ${comparisonData.length} sections with actual word differences`
+                : ` → No word differences detected between versions`
             ) : ` → Showing all sections`}
           </div>
         </div>
@@ -433,7 +431,7 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
               onChange={(e) => setShowOnlyChanges(e.target.checked)}
               style={{margin: 0}}
             />
-            <span>🎯 Hide unchanged sections (recommended)</span>
+            <span>🎯 Hide unchanged sections</span>
           </label>
           
           {showOnlyChanges && comparisonData.length === 0 && (
@@ -555,9 +553,10 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
                       color: '#495057'
                     }}>
                       {row.before ? (
-                        <div style={{ opacity: 0.8 }}>
-                          {row.before.replace(/<[^>]*>?/gm, '').substring(0, 100) + (row.before.length > 100 ? '...' : '')}
-                        </div>
+                        <div 
+                          style={{ opacity: 0.8 }}
+                          dangerouslySetInnerHTML={{ __html: row.before }}
+                        />
                       ) : (
                         <span style={{ color: '#6c757d', fontStyle: 'italic' }}>No content</span>
                       )}
@@ -583,11 +582,27 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
                       fontSize: '13px',
                       lineHeight: '1.5'
                     }}>
-                      <ComparativeDiffBlock 
-                        before={row.before} 
-                        after={row.after} 
-                        showFull={true}
-                      />
+                      {row.after ? (
+                        <div 
+                          dangerouslySetInnerHTML={{ __html: row.after }}
+                        />
+                      ) : (
+                        <span style={{ color: '#6c757d', fontStyle: 'italic' }}>No content</span>
+                      )}
+                      {/* Show change indicator if different */}
+                      {getRowStatus(row) !== 'unchanged' && (
+                        <div style={{
+                          marginTop: '8px',
+                          padding: '4px 8px',
+                          backgroundColor: '#fff3cd',
+                          border: '1px solid #ffeaa7',
+                          borderRadius: '4px',
+                          fontSize: '12px',
+                          color: '#856404'
+                        }}>
+                          📝 This section has been modified
+                        </div>
+                      )}
                     </div>
                   </td>
                   <td style={{ 
