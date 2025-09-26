@@ -298,6 +298,293 @@ function ComparativeTable({ oldVersion, newVersion, comments = [], onClose }) {
   )
 }
 
+// Chapter Manager Panel
+function ChapterManagerPanel({ docs, onAddChapter, onDeleteChapter, onClose, preSelectedDoc = null }) {
+  const [selectedDocId, setSelectedDocId] = useState(preSelectedDoc?.id || docs[0]?.id || '')
+  const [newChapterName, setNewChapterName] = useState('')
+  const [selectedChapterToDelete, setSelectedChapterToDelete] = useState('')
+
+  const selectedDoc = docs.find(d => d.id === selectedDocId)
+  const latestVersion = selectedDoc?.versions[selectedDoc.versions.length - 1]
+  const availableChapters = latestVersion?.sections || []
+
+  const handleAddChapter = (e) => {
+    e.preventDefault()
+    if (newChapterName.trim() && selectedDocId) {
+      onAddChapter(selectedDocId, newChapterName.trim())
+      setNewChapterName('')
+    }
+  }
+
+  const handleDeleteChapter = () => {
+    if (selectedChapterToDelete && selectedDocId) {
+      if (confirm(`Are you sure you want to delete the chapter "${selectedChapterToDelete}"?`)) {
+        onDeleteChapter(selectedDocId, selectedChapterToDelete)
+        setSelectedChapterToDelete('')
+      }
+    }
+  }
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      zIndex: 1000,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }}>
+      <div style={{
+        backgroundColor: 'white',
+        borderRadius: '8px',
+        padding: '32px',
+        minWidth: '600px',
+        maxWidth: '80vw',
+        maxHeight: '80vh',
+        overflow: 'auto',
+        boxShadow: '0 10px 30px rgba(0,0,0,0.3)'
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '24px',
+          borderBottom: '1px solid #e0e0e0',
+          paddingBottom: '16px'
+        }}>
+          <h2 style={{
+            fontSize: '24px',
+            fontWeight: '600',
+            color: '#333',
+            margin: 0
+          }}>
+            Manage Chapters
+          </h2>
+          <button
+            onClick={onClose}
+            style={{
+              backgroundColor: 'transparent',
+              border: 'none',
+              color: '#dc3545',
+              fontSize: '16px',
+              fontWeight: '500',
+              cursor: 'pointer',
+              padding: '8px 16px'
+            }}
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Document Selection */}
+        <div style={{ marginBottom: '24px' }}>
+          <label style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontSize: '14px',
+            fontWeight: '500',
+            color: '#495057'
+          }}>
+            Select Document
+          </label>
+          <select
+            value={selectedDocId}
+            onChange={e => setSelectedDocId(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              border: '1px solid #ced4da',
+              borderRadius: '4px',
+              fontSize: '14px'
+            }}
+          >
+            {docs.map(doc => (
+              <option key={doc.id} value={doc.id}>
+                {doc.title} ({doc.type})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Add Chapter Section */}
+        <div style={{
+          backgroundColor: '#f8f9fa',
+          padding: '20px',
+          borderRadius: '6px',
+          marginBottom: '24px'
+        }}>
+          <h3 style={{
+            fontSize: '18px',
+            fontWeight: '500',
+            color: '#333',
+            margin: '0 0 16px 0'
+          }}>
+            Add New Chapter
+          </h3>
+          <form onSubmit={handleAddChapter} style={{ display: 'flex', gap: '12px' }}>
+            <input
+              type="text"
+              value={newChapterName}
+              onChange={e => setNewChapterName(e.target.value)}
+              placeholder="Enter chapter name (e.g., 'Chapter XII', '15. New Section')"
+              style={{
+                flex: 1,
+                padding: '10px 12px',
+                border: '1px solid #ced4da',
+                borderRadius: '4px',
+                fontSize: '14px'
+              }}
+            />
+            <button
+              type="submit"
+              disabled={!newChapterName.trim()}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#28a745',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: newChapterName.trim() ? 'pointer' : 'not-allowed',
+                opacity: newChapterName.trim() ? 1 : 0.6
+              }}
+            >
+              Add Chapter
+            </button>
+          </form>
+        </div>
+
+        {/* Delete Chapter Section */}
+        <div style={{
+          backgroundColor: '#fff5f5',
+          padding: '20px',
+          borderRadius: '6px',
+          marginBottom: '16px'
+        }}>
+          <h3 style={{
+            fontSize: '18px',
+            fontWeight: '500',
+            color: '#333',
+            margin: '0 0 16px 0'
+          }}>
+            Delete Chapter
+          </h3>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'end' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{
+                display: 'block',
+                marginBottom: '6px',
+                fontSize: '13px',
+                fontWeight: '500',
+                color: '#495057'
+              }}>
+                Select Chapter to Delete
+              </label>
+              <select
+                value={selectedChapterToDelete}
+                onChange={e => setSelectedChapterToDelete(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #ced4da',
+                  borderRadius: '4px',
+                  fontSize: '14px'
+                }}
+              >
+                <option value="">Choose a chapter...</option>
+                {availableChapters.map(chapter => (
+                  <option key={chapter.key} value={chapter.key}>
+                    {chapter.key}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={handleDeleteChapter}
+              disabled={!selectedChapterToDelete}
+              style={{
+                padding: '10px 20px',
+                backgroundColor: '#dc3545',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: selectedChapterToDelete ? 'pointer' : 'not-allowed',
+                opacity: selectedChapterToDelete ? 1 : 0.6
+              }}
+            >
+              Delete Chapter
+            </button>
+          </div>
+        </div>
+
+        {/* Current Chapters List */}
+        <div>
+          <h3 style={{
+            fontSize: '16px',
+            fontWeight: '500',
+            color: '#333',
+            margin: '0 0 12px 0'
+          }}>
+            Current Chapters ({availableChapters.length})
+          </h3>
+          <div style={{
+            maxHeight: '200px',
+            overflow: 'auto',
+            border: '1px solid #dee2e6',
+            borderRadius: '4px',
+            backgroundColor: '#fff'
+          }}>
+            {availableChapters.length > 0 ? (
+              availableChapters.map((chapter, index) => (
+                <div
+                  key={chapter.key}
+                  style={{
+                    padding: '12px 16px',
+                    borderBottom: index < availableChapters.length - 1 ? '1px solid #f0f0f0' : 'none',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}
+                >
+                  <span style={{ fontWeight: '500', color: '#333' }}>
+                    {chapter.key}
+                  </span>
+                  <span style={{ 
+                    fontSize: '12px', 
+                    color: '#6c757d',
+                    backgroundColor: '#f8f9fa',
+                    padding: '2px 8px',
+                    borderRadius: '12px'
+                  }}>
+                    {chapter.text ? `${chapter.text.length} chars` : 'Empty'}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div style={{
+                padding: '20px',
+                textAlign: 'center',
+                color: '#6c757d',
+                fontStyle: 'italic'
+              }}>
+                No chapters found
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Comment Input Component
 function CommentInput({ onAddComment }) {
   const [comment, setComment] = useState('')
@@ -874,6 +1161,8 @@ export default function App(){
   const [showCompare, setShowCompare] = useState(false)
   const [compareTargetId, setCompareTargetId] = useState(null)
   const [showComparativeTable, setShowComparativeTable] = useState(false)
+  const [showChapterManager, setShowChapterManager] = useState(false)
+  const [selectedDocForChapter, setSelectedDocForChapter] = useState(null)
 
   useEffect(()=>{
     const { docs, audit } = load()
@@ -897,6 +1186,53 @@ export default function App(){
 
   function addAudit(action, docId, meta){
     setAudit(a => [{ id: uid(), ts: now(), action, docId, meta }, ...a].slice(0,400))
+  }
+
+  function addChapterToDocument(docId, chapterName) {
+    if (!chapterName.trim()) return
+    
+    const doc = docs.find(d => d.id === docId)
+    if (!doc) return
+
+    const latestVersion = doc.versions[doc.versions.length - 1]
+    const newSection = { key: chapterName.trim(), text: '' }
+    const updatedSections = [...latestVersion.sections, newSection]
+    
+    const updatedVersions = doc.versions.slice(0, -1).concat({
+      ...latestVersion,
+      sections: updatedSections
+    })
+    
+    const updatedDoc = {
+      ...doc,
+      versions: updatedVersions,
+      updatedAt: now()
+    }
+    
+    setDocs(docs.map(d => d.id === docId ? updatedDoc : d))
+    addAudit('add_chapter', docId, { chapterName })
+  }
+
+  function deleteChapterFromDocument(docId, chapterKey) {
+    const doc = docs.find(d => d.id === docId)
+    if (!doc) return
+
+    const latestVersion = doc.versions[doc.versions.length - 1]
+    const updatedSections = latestVersion.sections.filter(s => s.key !== chapterKey)
+    
+    const updatedVersions = doc.versions.slice(0, -1).concat({
+      ...latestVersion,
+      sections: updatedSections
+    })
+    
+    const updatedDoc = {
+      ...doc,
+      versions: updatedVersions,
+      updatedAt: now()
+    }
+    
+    setDocs(docs.map(d => d.id === docId ? updatedDoc : d))
+    addAudit('delete_chapter', docId, { chapterKey })
   }
 
   function newDoc(presetType='Policy'){
@@ -968,6 +1304,7 @@ export default function App(){
           </label>
           <button className="btn" onClick={exportJSON}>Export JSON</button>
           <button className="btn ghost" onClick={()=>setShowComparativeTable(true)}>Comparative Table</button>
+          <button className="btn ghost" onClick={()=>setShowChapterManager(true)}>Manage Chapters</button>
           <button className="btn primary" onClick={()=>newDoc('Policy')}>New</button>
         </div>
       </header>
@@ -1077,6 +1414,7 @@ export default function App(){
                         <div className="toolbar">
                           <button className="btn ghost" onClick={()=>{setSelected(d)}}>Open</button>
                           <button className="btn ghost" onClick={()=>{setSelected(d)}}>Edit</button>
+                          <button className="btn ghost" onClick={()=> { setSelectedDocForChapter(d); setShowChapterManager(true) }}>Add Chapter</button>
                           <button className="btn ghost" onClick={()=>{ setSelected(d); setShowCompare(true); setCompareTargetId(null) }}>Compare</button>
                           <button className="btn danger" onClick={()=>deleteDoc(d.id)}>Delete</button>
                         </div>
@@ -1141,6 +1479,27 @@ export default function App(){
           onClose={()=>setShowComparativeTable(false)}
         />
       )}
+
+      {/* Chapter Manager */}
+      {showChapterManager && (
+        <ChapterManagerPanel
+          docs={docs}
+          onAddChapter={addChapterToDocument}
+          onDeleteChapter={deleteChapterFromDocument}
+          onClose={()=>setShowChapterManager(false)}
+        />
+      )}
+
+      {/* Chapter Manager */}
+      {showChapterManager && (
+        <ChapterManagerPanel
+          docs={docs}
+          onAddChapter={addChapterToDocument}
+          onDeleteChapter={deleteChapterFromDocument}
+          onClose={()=>{setShowChapterManager(false); setSelectedDocForChapter(null)}}
+          preSelectedDoc={selectedDocForChapter}
+        />
+      )}
     </div>
   )
 }
@@ -1156,6 +1515,14 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
   function updateSection(key, text){
     const latest = d.versions[d.versions.length-1]
     const sections = latest.sections.map(s => s.key===key ? { ...s, text } : s)
+    const versions = d.versions.slice(0,-1).concat({ ...latest, sections })
+    update('versions', versions)
+  }
+  function deleteSection(key){
+    if (!confirm(`Are you sure you want to delete the section "${key}"?`)) return
+    
+    const latest = d.versions[d.versions.length-1]
+    const sections = latest.sections.filter(s => s.key !== key)
     const versions = d.versions.slice(0,-1).concat({ ...latest, sections })
     update('versions', versions)
   }
@@ -1222,18 +1589,100 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
         </div>
 
         <div style={{marginTop:12}} className="muted">Complete the required sections. Use <b>Snapshot</b> before big edits.</div>
+        
+        {/* Add New Chapter Button */}
+        <div style={{marginTop:16, padding:12, backgroundColor:'#f8f9fa', borderRadius:6}}>
+          <div style={{display:'flex', gap:8, alignItems:'center'}}>
+            <input
+              type="text"
+              placeholder="Enter new chapter name (e.g., 'Chapter XV', '15. New Section')"
+              style={{
+                flex:1,
+                padding:'8px 12px',
+                border:'1px solid #ced4da',
+                borderRadius:'4px',
+                fontSize:'14px'
+              }}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && e.target.value.trim()) {
+                  const latest = d.versions[d.versions.length-1]
+                  const newSection = { key: e.target.value.trim(), text: '' }
+                  const sections = [...latest.sections, newSection]
+                  const versions = d.versions.slice(0,-1).concat({ ...latest, sections })
+                  update('versions', versions)
+                  e.target.value = ''
+                }
+              }}
+            />
+            <button
+              onClick={(e) => {
+                const input = e.target.parentElement.querySelector('input')
+                if (input.value.trim()) {
+                  const latest = d.versions[d.versions.length-1]
+                  const newSection = { key: input.value.trim(), text: '' }
+                  const sections = [...latest.sections, newSection]
+                  const versions = d.versions.slice(0,-1).concat({ ...latest, sections })
+                  update('versions', versions)
+                  input.value = ''
+                }
+              }}
+              style={{
+                padding:'8px 16px',
+                backgroundColor:'#28a745',
+                color:'white',
+                border:'none',
+                borderRadius:'4px',
+                fontSize:'14px',
+                fontWeight:'500',
+                cursor:'pointer'
+              }}
+            >
+              Add Chapter
+            </button>
+          </div>
+        </div>
+        
         <div style={{display:'grid', gap:12, marginTop:8}}>
-          {REQUIRED[d.type].map(key => {
-            const sectionText = latest.sections.find(s=>s.key===key)?.text||'';
+          {latest.sections.map(section => {
+            const isRequired = REQUIRED[d.type].includes(section.key);
             return (
-              <div key={key}>
-                <div className="muted" style={{fontWeight:600, marginBottom:6}}>{key}</div>
+              <div key={section.key}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6}}>
+                  <div className="muted" style={{fontWeight:600}}>
+                    {section.key}
+                    {isRequired && <span style={{color:'#dc3545', marginLeft:4}}>*</span>}
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (isRequired) {
+                        if (!confirm(`"${section.key}" is a required section. Deleting it may affect document compliance. Are you sure you want to delete it?`)) {
+                          return;
+                        }
+                      }
+                      deleteSection(section.key);
+                    }}
+                    title={`Delete section: ${section.key}${isRequired ? ' (Required)' : ''}`}
+                    style={{
+                      backgroundColor: 'transparent',
+                      border: `1px solid ${isRequired ? '#ffc107' : '#dc3545'}`,
+                      color: isRequired ? '#856404' : '#dc3545',
+                      padding: '2px 8px',
+                      borderRadius: '3px',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      fontWeight: '500',
+                      opacity: isRequired ? 0.8 : 1
+                    }}
+                  >
+                    {isRequired ? 'Delete*' : 'Delete'}
+                  </button>
+                </div>
                   <CKEditor
                     editor={ClassicEditor}
-                    data={sectionText}
+                    data={section.text || ''}
                     onChange={(event, editor) => {
                       const data = editor.getData();
-                      updateSection(key, data);
+                      updateSection(section.key, data);
                     }}
                     config={{
                       toolbar: [
@@ -1246,8 +1695,9 @@ function Editor({ doc, onChange, onSnapshot, onClose, onCompare }){
                       }
                     }}
                   />
-                  <div style={{fontSize:12, color:'#888', marginTop:4}}>
-                    <b>Tip:</b> Use the toolbar above for Word-like formatting and table creation. Paste from Word for advanced tables.
+                  <div style={{fontSize:12, color:'#888', marginTop:4, display:'flex', justifyContent:'space-between'}}>
+                    <span><b>Tip:</b> Use the toolbar above for Word-like formatting and table creation. Paste from Word for advanced tables.</span>
+                    <span>{(section.text||'').replace(/<[^>]*>?/gm, '').length} characters</span>
                   </div>
               </div>
             );
