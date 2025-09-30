@@ -6,6 +6,7 @@ import ClassicEditor from '@ckeditor/ckeditor5-build-classic';
 import * as Diff from 'diff'
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx'
 import { saveAs } from 'file-saver'
+import SectionDefinerPanel from './SectionDefinerPanel'
 
 const TYPES = ['Policy','Procedure','Regulation']
 const STATUSES = ['Draft','Under Review','Active','Archived']
@@ -1526,8 +1527,242 @@ function download(filename, text){
   a.remove()
 }
 
+// Create document from Word content with defined sections
+const createDocumentFromWordContent = (wordContent, sections, docType, docTitle) => {
+  console.log('Creating document with word content length:', wordContent?.length);
+  
+  // Parse Word content to extract sections
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(wordContent, 'text/html');
+  
+  // Function to normalize section names for matching
+  const normalizeSection = (sectionName) => {
+    return sectionName.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  // Function to extract content for a section
+  const extractSectionContent = (sectionName) => {
+    console.log(`Extracting content for section: "${sectionName}"`);
+    const normalizedTarget = normalizeSection(sectionName);
+    
+    // Look for section headers in multiple places: headings, table cells, strong/bold text
+    const allElements = doc.querySelectorAll('h1, h2, h3, h4, h5, h6, p strong, p b, strong, b, td, th');
+    let startElement = null;
+    
+    for (const element of allElements) {
+      const elementText = normalizeSection(element.textContent);
+      console.log(`Checking element: "${element.textContent}" -> normalized: "${elementText}"`);
+      
+      // Check for exact match or partial match
+      if (elementText.includes(normalizedTarget) || normalizedTarget.includes(elementText)) {
+        console.log(`Found match for "${sectionName}": "${element.textContent}"`);
+        startElement = element;
+        break;
+      }
+      
+      // Check for Roman numerals, numbers, or bullet points
+      const patterns = [
+        new RegExp(`\\b(i{1,3}v?|v|ix?)\\s*\\.?\\s*${normalizedTarget.replace(/\s+/g, '\\s+')}`, 'i'),
+        new RegExp(`\\b\\d+\\.?\\s*${normalizedTarget.replace(/\s+/g, '\\s+')}`, 'i'),
+        new RegExp(`^\\s*${normalizedTarget.replace(/\s+/g, '\\s+')}\\s*:?$`, 'i')
+      ];
+      
+      for (const pattern of patterns) {
+        if (pattern.test(elementText)) {
+          console.log(`Found pattern match for "${sectionName}": "${element.textContent}"`);
+          startElement = element;
+          break;
+        }
+      }
+      
+      if (startElement) break;
+    }
+    
+    if (!startElement) {
+      console.log(`No match found for section: "${sectionName}"`);
+      return `<p><em>No content found for "${sectionName}". The section heading was not detected in the uploaded Word document.</em></p>`;
+    }
+    
+    // Extract content based on element type
+    let content = '';
+    console.log(`Found section header in: ${startElement.tagName}`);
+    
+    if (startElement.tagName.toLowerCase() === 'td' || startElement.tagName.toLowerCase() === 'th') {
+      // If found in table cell, extract content from:
+      // 1. Same row, next cell (if exists)
+      // 2. Next table row(s) - ALL CELLS as content
+      const currentRow = startElement.closest('tr');
+      
+      // First, try to get content from the next cell in the same row
+      const nextCell = startElement.nextElementSibling;
+      if (nextCell && (nextCell.tagName.toLowerCase() === 'td' || nextCell.tagName.toLowerCase() === 'th')) {
+        content += nextCell.innerHTML + '\n';
+        console.log(`Added content from next cell in same row: ${nextCell.textContent.substring(0, 100)}...`);
+      }
+      
+      // Then, get content from the NEXT ROW - this is the main content for the section
+      let nextRow = currentRow.nextElementSibling;
+      if (nextRow && nextRow.tagName.toLowerCase() === 'tr') {
+        const rowCells = nextRow.querySelectorAll('td, th');
+        
+        // Check if this next row contains another section header
+        let isAnotherSection = false;
+        for (const cell of rowCells) {
+          const cellText = normalizeSection(cell.textContent);
+          if (sections.some(s => normalizeSection(s) === cellText)) {
+            console.log(`Next row contains another section header: "${cell.textContent}"`);
+            isAnotherSection = true;
+            break;
+          }
+        }
+        
+        // If the next row is not another section header, extract ALL cells as content
+        if (!isAnotherSection) {
+          console.log(`Extracting content from next row with ${rowCells.length} cells`);
+          let rowContent = '';
+          for (const cell of rowCells) {
+            if (cell.textContent.trim()) {
+              rowContent += cell.innerHTML + ' ';
+            }
+          }
+          if (rowContent.trim()) {
+            content += '<p>' + rowContent.trim() + '</p>\n';
+            console.log(`Added content from next row: ${rowContent.substring(0, 150)}...`);
+          }
+          
+          // Continue with subsequent rows until we hit another section header
+          nextRow = nextRow.nextElementSibling;
+          while (nextRow && nextRow.tagName.toLowerCase() === 'tr') {
+            const subsequentCells = nextRow.querySelectorAll('td, th');
+            
+            // Check if this row contains another section header
+            let hasAnotherSection = false;
+            for (const cell of subsequentCells) {
+              const cellText = normalizeSection(cell.textContent);
+              if (sections.some(s => normalizeSection(s) === cellText)) {
+                console.log(`Stopped at next section in table: "${cell.textContent}"`);
+                hasAnotherSection = true;
+                break;
+              }
+            }
+            
+            if (hasAnotherSection) break;
+            
+            // Add content from all cells in this row
+            let subsequentRowContent = '';
+            for (const cell of subsequentCells) {
+              if (cell.textContent.trim()) {
+                subsequentRowContent += cell.innerHTML + ' ';
+              }
+            }
+            if (subsequentRowContent.trim()) {
+              content += '<p>' + subsequentRowContent.trim() + '</p>\n';
+            }
+            
+            console.log(`Added content from subsequent table row: ${nextRow.textContent.substring(0, 100)}...`);
+            nextRow = nextRow.nextElementSibling;
+          }
+        }
+      }
+      
+    } else {
+      // Regular heading or text element - use original logic
+      let currentElement = startElement.nextElementSibling;
+      const startLevel = parseInt(startElement.tagName.charAt(1)) || 6;
+      
+      console.log(`Extracting content after heading: "${startElement.textContent}"`);
+      
+      while (currentElement) {
+        const tagName = currentElement.tagName.toLowerCase();
+        
+        // Stop if we hit another heading of same or higher level
+        if (tagName.match(/^h[1-6]$/)) {
+          const currentLevel = parseInt(tagName.charAt(1));
+          if (currentLevel <= startLevel) {
+            console.log(`Stopped at next heading: "${currentElement.textContent}"`);
+            break;
+          }
+        }
+        
+        // Stop if we hit another strong/bold that looks like a section header
+        if ((tagName === 'strong' || tagName === 'b') && currentElement.textContent.trim().length > 0) {
+          const nextText = normalizeSection(currentElement.textContent);
+          if (sections.some(s => normalizeSection(s) === nextText)) {
+            console.log(`Stopped at next section: "${currentElement.textContent}"`);
+            break;
+          }
+        }
+        
+        // Add content
+        if (currentElement.textContent.trim()) {
+          content += currentElement.outerHTML + '\n';
+        }
+        
+        currentElement = currentElement.nextElementSibling;
+      }
+    }
+    
+    const extractedContent = content.trim();
+    console.log(`Extracted ${extractedContent.length} characters for "${sectionName}"`);
+    
+    return extractedContent || `<p><em>Section "${sectionName}" was found but contains no content.</em></p>`;
+  };
+
+  // Create the new document structure matching the expected format
+  const newDoc = {
+    id: (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2),
+    code: '',
+    title: docTitle,
+    type: docType,
+    department: '',
+    tags: [],
+    status: 'Draft',
+    effectiveDate: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    versions: [{
+      id: (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2),
+      version: 'v1.0',
+      createdAt: new Date().toISOString(),
+      sections: sections.map(sectionName => ({
+        key: sectionName,
+        text: extractSectionContent(sectionName)
+      }))
+    }],
+    comments: []
+  };
+  
+  console.log('Created document:', newDoc);
+  return newDoc;
+};
+
 export default function App(){
   const [uploadError, setUploadError] = useState('');
+  
+  // New Word document upload handler that opens section definer
+  async function handleWordDocumentUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    try {
+      const mammoth = await import('mammoth');
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.convertToHtml({ arrayBuffer });
+      
+      // Store the uploaded content and show section definer
+      setUploadedWordContent(result.value);
+      setUploadedFileName(file.name);
+      setShowSectionDefiner(true);
+      
+    } catch (error) {
+      console.error('Error processing Word document:', error);
+      setUploadError(`Failed to process Word document: ${error.message}`);
+    }
+  }
+  
   // General Word document upload handler for top of table
   async function handleGeneralWordUpload(e) {
     const file = e.target.files[0];
@@ -1871,6 +2106,9 @@ export default function App(){
   const [showComparativeTable, setShowComparativeTable] = useState(false)
   const [showChapterManager, setShowChapterManager] = useState(false)
   const [selectedDocForChapter, setSelectedDocForChapter] = useState(null)
+  const [showSectionDefiner, setShowSectionDefiner] = useState(false)
+  const [uploadedWordContent, setUploadedWordContent] = useState(null)
+  const [uploadedFileName, setUploadedFileName] = useState('')
 
   useEffect(()=>{
     const { docs, audit } = load()
@@ -2028,10 +2266,10 @@ export default function App(){
       <main className="container" style={{padding:'16px 0 24px'}}>
         <div style={{marginBottom:16}}>
           <label className="btn primary" style={{cursor:'pointer'}}>
-            Import Word Document
-            <input type="file" accept=".docx" style={{display:'none'}} onChange={handleGeneralWordUpload} />
+            📤 Upload Word Document
+            <input type="file" accept=".docx" style={{display:'none'}} onChange={handleWordDocumentUpload} />
           </label>
-          <span style={{marginLeft:8, color:'#888', fontSize:12}}>Upload a ready Word (.docx) file to create a new document.</span>
+          <span style={{marginLeft:8, color:'#888', fontSize:12}}>Upload a Word (.docx) file to define sections and create a new document.</span>
         </div>
         <div style={{marginBottom:16}}>
           <button 
@@ -2189,6 +2427,44 @@ export default function App(){
           onDeleteChapter={deleteChapterFromDocument}
           onClose={()=>{setShowChapterManager(false); setSelectedDocForChapter(null)}}
           preSelectedDoc={selectedDocForChapter}
+        />
+      )}
+
+      {/* Section Definer */}
+      {showSectionDefiner && (
+        <SectionDefinerPanel
+          wordContent={uploadedWordContent}
+          fileName={uploadedFileName}
+          onClose={() => {
+            setShowSectionDefiner(false);
+            setUploadedWordContent(null);
+            setUploadedFileName('');
+          }}
+          onCreateDocument={(sections, docType, docTitle) => {
+            try {
+              console.log('Creating document with:', { sections, docType, docTitle });
+              console.log('Word content available:', !!uploadedWordContent);
+              
+              // Process the Word content and create document
+              const newDoc = createDocumentFromWordContent(
+                uploadedWordContent, 
+                sections, 
+                docType, 
+                docTitle
+              );
+              
+              console.log('New document created:', newDoc);
+              
+              setDocs([newDoc, ...docs]);
+              setSelected(newDoc);
+              setShowSectionDefiner(false);
+              setUploadedWordContent(null);
+              setUploadedFileName('');
+            } catch (error) {
+              console.error('Error creating document:', error);
+              alert('Error creating document: ' + error.message);
+            }
+          }}
         />
       )}
     </div>
