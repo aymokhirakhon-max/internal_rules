@@ -2702,53 +2702,70 @@ function TagEditor({ value, onChange }){
 }
 
 function DiffBlock({ before, after }){
-  // Clean HTML tags from both texts for comparison
-  const beforeText = (before || '').replace(/<[^>]*>?/gm, '').trim()
-  const afterText = (after || '').replace(/<[^>]*>?/gm, '').trim()
+  // SUPER AGGRESSIVE text cleaning to ignore ALL formatting differences
+  const cleanText = (text) => {
+    if (!text) return '';
+    return text
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
+      .replace(/&[^;]+;/g, ' ') // Remove ALL HTML entities (&nbsp;, &amp;, etc.)
+      .replace(/[\s\r\n\t_-]+/g, '') // Remove ALL whitespace and formatting chars
+      .replace(/[^\w]/g, '') // Remove everything except letters and numbers
+      .toLowerCase() // Case insensitive
+      .trim();
+  };
+
+  // Clean both texts for comparison
+  const beforeClean = cleanText(before);
+  const afterClean = cleanText(after);
   
-  const parts = Diff.diffWords(beforeText, afterText)
+  // Only show diff if there are actual content differences after super cleaning
+  if (beforeClean === afterClean) {
+    return null; // Don't show anything if content is identical
+  }
+
+  // If no content in either version
+  if (!beforeClean && !afterClean) {
+    return null; // Hide completely empty sections
+  }
+
+  // For actual changes, use the cleaned text for word comparison
+  const parts = Diff.diffWords(beforeClean, afterClean)
   const hasChanges = parts.some(p => p.added || p.removed)
   
-  // If no content in either version
-  if (!beforeText && !afterText) {
-    return (
-      <div style={{lineHeight:'1.6', padding: '8px', backgroundColor: '#f8f9fa', borderRadius: '4px'}}>
-        <span style={{color: '#6c757d', fontStyle: 'italic'}}>No content in either version</span>
-      </div>
-    )
-  }
-  
-  // If identical content
+  // If still no changes after diff
   if (!hasChanges) {
-    return (
-      <div style={{lineHeight:'1.6', padding: '8px', backgroundColor: '#f8f9fa', borderRadius: '4px'}}>
-        <div style={{marginBottom: '4px', fontSize: '11px', color: '#28a745', fontWeight: 'bold'}}>
-          ✓ IDENTICAL CONTENT
-        </div>
-        <div style={{color: '#495057', fontSize: '13px'}}>
-          {beforeText.length > 100 ? beforeText.substring(0, 100) + '...' : beforeText}
-        </div>
-      </div>
-    )
+    return null; // Hide if no real changes
   }
   
-  // Show detailed diff
+  // Show ONLY the changed words - filter out unchanged parts completely
+  const changedParts = parts.filter(p => p.added || p.removed);
+  
+  if (changedParts.length === 0) {
+    return (
+      <div style={{lineHeight:'1.6', padding: '8px', backgroundColor: '#e8f5e8', borderRadius: '4px', border: '1px solid #c3e6cb'}}>
+        <div style={{fontSize: '11px', color: '#28a745', fontWeight: 'bold'}}>
+          ✓ NO ACTUAL CHANGES - Only formatting differences
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{lineHeight:'1.6', padding: '8px', backgroundColor: '#f8f9fa', borderRadius: '4px'}}>
-      <div style={{marginBottom: '8px', fontSize: '12px', fontWeight: 'bold', color: '#495057'}}>
-        🔍 CHANGES DETECTED:
+    <div style={{lineHeight:'1.6', padding: '8px', backgroundColor: '#fff3cd', borderRadius: '4px', border: '1px solid #ffeaa7'}}>
+      <div style={{marginBottom: '8px', fontSize: '12px', fontWeight: 'bold', color: '#856404'}}>
+        🔍 ONLY CHANGED WORDS:
       </div>
       <div style={{fontSize: '13px'}}>
-        {parts.map((p,i) => {
+        {changedParts.map((p,i) => {
           if (p.added) {
             return (
               <span key={i} style={{
                 backgroundColor: '#d1e7dd',
                 color: '#0f5132',
                 fontWeight: 'bold',
-                padding: '2px 6px',
+                padding: '3px 8px',
                 borderRadius: '4px',
-                margin: '0 2px',
+                margin: '2px 4px',
                 display: 'inline-block',
                 border: '1px solid #badbcc'
               }}>
@@ -2761,9 +2778,9 @@ function DiffBlock({ before, after }){
                 backgroundColor: '#f8d7da',
                 color: '#842029',
                 fontWeight: 'bold',
-                padding: '2px 6px',
+                padding: '3px 8px',
                 borderRadius: '4px',
-                margin: '0 2px',
+                margin: '2px 4px',
                 textDecoration: 'line-through',
                 display: 'inline-block',
                 border: '1px solid #f5c2c7'
@@ -2771,11 +2788,8 @@ function DiffBlock({ before, after }){
                 ❌ {p.value}
               </span>
             )
-          } else {
-            // Show unchanged text with limited length
-            const displayText = p.value.length > 50 ? p.value.substring(0, 50) + '...' : p.value
-            return <span key={i} style={{color: '#495057'}}>{displayText}</span>
           }
+          return null;
         })}
       </div>
     </div>
@@ -2785,7 +2799,7 @@ function DiffBlock({ before, after }){
 function ComparePanel({ docs, base, targetId, onSelectTarget, onClose }){
   const [mode, setMode] = useState('versions')
   const [viewMode, setViewMode] = useState('diff') // 'diff' or 'comparative'
-  const [showOnlyChanges, setShowOnlyChanges] = useState(false)
+  const [showOnlyChanges, setShowOnlyChanges] = useState(true) // Show only changed sections by default
   
   // Initialize with more intuitive defaults
   // For imported documents, usually want to compare original import (first) vs latest edits (last)
