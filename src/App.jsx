@@ -3026,3 +3026,6 @@ function ComparePanel({ docs, base, targetId, onSelectTarget, onClose }){
     </div>
   )
 }
+
+
+
