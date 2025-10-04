@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 const SectionDefinerPanel = ({ wordContent, fileName, onClose, onCreateDocument }) => {
   const [docTitle, setDocTitle] = useState(fileName.replace(/\.(docx?|doc)$/i, ''));
   const [docType, setDocType] = useState('Policy');
+  const [docStatus, setDocStatus] = useState('Draft');
   const [sections, setSections] = useState([
     'Title',
     'Purpose',
@@ -39,7 +40,7 @@ const SectionDefinerPanel = ({ wordContent, fileName, onClose, onCreateDocument 
 
   const handleCreateDocument = () => {
     if (docTitle.trim() && sections.length > 0) {
-      onCreateDocument(sections, docType, docTitle.trim());
+      onCreateDocument(sections, docType, docTitle.trim(), docStatus);
     }
   };
 
@@ -70,6 +71,24 @@ const SectionDefinerPanel = ({ wordContent, fileName, onClose, onCreateDocument 
                 <option value="Procedure">Procedure</option>
                 <option value="Regulation">Regulation</option>
               </select>
+            </div>
+
+            <div className="form-group">
+              <label>Document Status:</label>
+              <select value={docStatus} onChange={(e) => setDocStatus(e.target.value)}>
+                <option value="Draft">Draft</option>
+                <option value="Under Review">Under Review</option>
+                <option value="Active">Active</option>
+                <option value="Archived">Archived</option>
+              </select>
+              {(docStatus === 'Active' || docStatus === 'Archived') && (
+                <div className="status-warning">
+                  <span className="warning-icon">⚠️</span>
+                  <span className="warning-text">
+                    Documents with "{docStatus}" status will be read-only and cannot be edited after creation.
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -134,7 +153,10 @@ const SectionDefinerPanel = ({ wordContent, fileName, onClose, onCreateDocument 
               onClick={handleCreateDocument}
               disabled={!docTitle.trim() || sections.length === 0}
             >
-              📄 Create Document
+              {docStatus === 'Active' || docStatus === 'Archived' 
+                ? `📄 Create ${docStatus} Document (Read-Only)`
+                : '📄 Create Document'
+              }
             </button>
           </div>
         </div>
@@ -235,6 +257,27 @@ const SectionDefinerPanel = ({ wordContent, fileName, onClose, onCreateDocument 
         .form-group select:focus {
           outline: none;
           border-color: #667eea;
+        }
+
+        .status-warning {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 8px;
+          padding: 10px;
+          background: #fff3cd;
+          border: 1px solid #ffeaa7;
+          border-radius: 6px;
+          font-size: 13px;
+        }
+
+        .warning-icon {
+          font-size: 16px;
+        }
+
+        .warning-text {
+          color: #856404;
+          font-weight: 500;
         }
 
         .sections-container h3 {

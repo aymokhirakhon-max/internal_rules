@@ -1518,7 +1518,7 @@ function ComparativeTableWithSelection({
   )
 }
 // Word Document View Component for Active and Archived Documents
-function WordDocumentView({ doc, onClose }) {
+function WordDocumentView({ doc, onClose, onExport }) {
   const latestVersion = doc.versions[doc.versions.length - 1];
   const sections = latestVersion?.sections || [];
   
@@ -1714,13 +1714,35 @@ function WordDocumentView({ doc, onClose }) {
         </div>
       </div>
 
-      {/* Print Button */}
+      {/* Action Buttons */}
       <div style={{
         position: 'fixed',
         bottom: '20px',
         right: '20px',
-        zIndex: 1001
+        zIndex: 1001,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px'
       }}>
+        <button
+          onClick={() => onExport && onExport(doc)}
+          style={{
+            backgroundColor: '#28a745',
+            color: 'white',
+            border: 'none',
+            padding: '12px 20px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: '500',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          📥 Export to Word
+        </button>
         <button
           onClick={() => window.print()}
           style={{
@@ -1756,7 +1778,7 @@ function download(filename, text){
 }
 
 // Create document from Word content with defined sections
-const createDocumentFromWordContent = (wordContent, sections, docType, docTitle) => {
+const createDocumentFromWordContent = (wordContent, sections, docType, docTitle, docStatus = 'Draft') => {
   console.log('Creating document with word content length:', wordContent?.length);
   
   // Parse Word content to extract sections
@@ -1947,7 +1969,7 @@ const createDocumentFromWordContent = (wordContent, sections, docType, docTitle)
     type: docType,
     department: '',
     tags: [],
-    status: 'Draft',
+    status: docStatus,
     effectiveDate: '',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -2094,13 +2116,303 @@ export default function App(){
     }
   }
 
+  // Simple export function as fallback
+  async function exportToWordSimple(doc) {
+    console.log('Using simple export method for doc:', doc.title);
+    
+    try {
+      const latestVersion = doc.versions[doc.versions.length - 1];
+      const sections = latestVersion?.sections || [];
+      
+      // Create very simple document structure
+      const children = [
+        new Paragraph({
+          text: doc.title || 'Untitled Document',
+          heading: HeadingLevel.TITLE,
+          spacing: { after: 400 }
+        }),
+        new Paragraph({
+          text: `Status: ${doc.status} | Type: ${doc.type} | Version: ${latestVersion?.version || 'v1.0'}`,
+          spacing: { after: 400 }
+        })
+      ];
+      
+      // Add sections with minimal processing
+      sections.forEach((section, index) => {
+        children.push(
+          new Paragraph({
+            text: section.key || `Section ${index + 1}`,
+            heading: HeadingLevel.HEADING_1,
+            spacing: { before: 400, after: 200 }
+          })
+        );
+        
+        // Simple text content
+        const text = section.text ? 
+          section.text.replace(/<[^>]*>/g, '').replace(/&[^;]+;/g, ' ').trim() : 
+          'No content';
+          
+        children.push(
+          new Paragraph({
+            text: text.substring(0, 2000), // Limit text length
+            spacing: { after: 200 }
+          })
+        );
+      });
+      
+      const simpleDoc = new Document({
+        sections: [{ children }]
+      });
+      
+      // Try using blob instead of buffer for better browser compatibility
+      const blob = await Packer.toBlob(simpleDoc);
+      const filename = `${doc.title || 'Document'}_simple.docx`;
+      saveAs(blob, filename);
+      
+      console.log('Simple export completed successfully');
+      return true;
+    } catch (error) {
+      console.error('Simple export also failed:', error);
+      return false;
+    }
+  }
+
+  // Alternative export method using HTML-based approach
+  async function exportToWordHTML(doc) {
+    console.log('Using HTML-based export method for doc:', doc.title);
+    
+    try {
+      const latestVersion = doc.versions[doc.versions.length - 1];
+      const sections = latestVersion?.sections || [];
+      
+      // Create HTML content
+      let htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>${doc.title || 'Document'}</title>
+          <style>
+            body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.5; margin: 1in; }
+            h1 { font-size: 16pt; font-weight: bold; text-align: center; margin-bottom: 20pt; }
+            h2 { font-size: 14pt; font-weight: bold; margin-top: 16pt; margin-bottom: 8pt; }
+            p { margin-bottom: 8pt; text-align: justify; }
+            .doc-info { margin-bottom: 20pt; }
+            .doc-info p { margin-bottom: 4pt; }
+          </style>
+        </head>
+        <body>
+          <h1>${doc.title || 'Untitled Document'}</h1>
+          <div class="doc-info">
+            <p><strong>Document Code:</strong> ${doc.code || 'N/A'}</p>
+            <p><strong>Type:</strong> ${doc.type || 'N/A'}</p>
+            <p><strong>Department:</strong> ${doc.department || 'N/A'}</p>
+            <p><strong>Status:</strong> ${doc.status || 'Draft'}</p>
+            <p><strong>Version:</strong> ${latestVersion?.version || 'v1.0'}</p>
+          </div>
+      `;
+      
+      // Add sections
+      sections.forEach((section, index) => {
+        const sectionTitle = section.key || `Section ${index + 1}`;
+        let content = section.text || 'No content';
+        
+        // Clean HTML content
+        content = content.replace(/<script[^>]*>.*?<\/script>/gi, '');
+        content = content.replace(/<style[^>]*>.*?<\/style>/gi, '');
+        
+        htmlContent += `
+          <h2>${sectionTitle}</h2>
+          <div>${content}</div>
+        `;
+      });
+      
+      htmlContent += `
+        </body>
+        </html>
+      `;
+      
+      // Create blob and download
+      const blob = new Blob([htmlContent], { 
+        type: 'application/msword' 
+      });
+      
+      const filename = `${doc.title || 'Document'}.doc`;
+      saveAs(blob, filename);
+      
+      console.log('HTML-based export completed successfully');
+      return true;
+    } catch (error) {
+      console.error('HTML-based export failed:', error);
+      return false;
+    }
+  }
+
+  // Ultimate fallback - plain text export
+  async function exportToWordText(doc) {
+    console.log('Using plain text export method for doc:', doc.title);
+    
+    try {
+      const latestVersion = doc.versions[doc.versions.length - 1];
+      const sections = latestVersion?.sections || [];
+      
+      // Create plain text content
+      let textContent = `${doc.title || 'Untitled Document'}\n`;
+      textContent += '='.repeat((doc.title || 'Untitled Document').length) + '\n\n';
+      
+      textContent += `Document Code: ${doc.code || 'N/A'}\n`;
+      textContent += `Type: ${doc.type || 'N/A'}\n`;
+      textContent += `Department: ${doc.department || 'N/A'}\n`;
+      textContent += `Status: ${doc.status || 'Draft'}\n`;
+      textContent += `Version: ${latestVersion?.version || 'v1.0'}\n\n`;
+      textContent += '-'.repeat(50) + '\n\n';
+      
+      // Add sections
+      sections.forEach((section, index) => {
+        const sectionTitle = section.key || `Section ${index + 1}`;
+        let content = section.text || 'No content';
+        
+        // Strip HTML tags and decode entities
+        content = content.replace(/<[^>]*>/g, '');
+        content = content.replace(/&nbsp;/g, ' ');
+        content = content.replace(/&amp;/g, '&');
+        content = content.replace(/&lt;/g, '<');
+        content = content.replace(/&gt;/g, '>');
+        content = content.replace(/&quot;/g, '"');
+        content = content.trim();
+        
+        textContent += `${sectionTitle}\n`;
+        textContent += '-'.repeat(sectionTitle.length) + '\n';
+        textContent += `${content}\n\n`;
+      });
+      
+      // Create blob and download as .txt file (most compatible)
+      const blob = new Blob([textContent], { 
+        type: 'text/plain;charset=utf-8' 
+      });
+      
+      const filename = `${doc.title || 'Document'}.txt`;
+      saveAs(blob, filename);
+      
+      console.log('Plain text export completed successfully');
+      return true;
+    } catch (error) {
+      console.error('Plain text export failed:', error);
+      return false;
+    }
+  }
+
+  // Test Word export function - for debugging
+  async function testWordExportLibraries() {
+    console.log('Testing Word export libraries...');
+    try {
+      // Test if docx library is working
+      console.log('Document class:', typeof Document);
+      console.log('Paragraph class:', typeof Paragraph);
+      console.log('Packer class:', typeof Packer);
+      console.log('saveAs function:', typeof saveAs);
+      
+      // Create a simple test document
+      const testDoc = new Document({
+        sections: [{
+          properties: {},
+          children: [
+            new Paragraph({
+              text: "Test Document",
+              heading: HeadingLevel.TITLE,
+            }),
+            new Paragraph({
+              text: "This is a test paragraph to verify the docx library is working properly.",
+            })
+          ]
+        }]
+      });
+      
+      console.log('Test document created successfully');
+      
+      // Generate buffer
+      const buffer = await Packer.toBuffer(testDoc);
+      console.log('Buffer generated, size:', buffer.byteLength);
+      
+      // Create blob and download
+      const blob = new Blob([buffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
+      });
+      
+      saveAs(blob, 'library-test.docx');
+      console.log('Test export completed successfully');
+      
+    } catch (error) {
+      console.error('Word export library test failed:', error);
+      alert('Word export test failed: ' + error.message);
+    }
+  }
+
   // Export Word Document function
   async function exportToWord(doc) {
     console.log('exportToWord called with doc:', doc);
+    console.log('Document status:', doc.status);
+    console.log('Document type:', doc.type);
+    console.log('Available versions:', doc.versions?.length);
+    
+    if (!doc) {
+      console.error('No document provided to export');
+      alert('Error: No document selected for export');
+      return;
+    }
+
+    // Check browser capabilities for Word export
+    const hasBuffer = typeof Buffer !== 'undefined';
+    const hasArrayBuffer = typeof ArrayBuffer !== 'undefined';
+    const hasBlob = typeof Blob !== 'undefined';
+    
+    console.log('Browser capabilities:', { hasBuffer, hasArrayBuffer, hasBlob });
+    
+    // If browser lacks basic capabilities, go straight to fallback
+    if (!hasArrayBuffer || !hasBlob) {
+      console.log('Browser lacks basic capabilities, using fallback methods');
+      const fallbackSuccess = await exportToWordText(doc);
+      if (fallbackSuccess) {
+        console.log('Text export fallback successful');
+        return;
+      } else {
+        alert('Export failed: Browser does not support required features');
+        return;
+      }
+    }
+
+    // Show loading notification
+    const loadingNotification = document.createElement('div');
+    loadingNotification.innerHTML = `
+      <div style="
+        position: fixed; 
+        top: 20px; 
+        right: 20px; 
+        background: #cce5ff; 
+        color: #004085; 
+        padding: 12px 16px; 
+        border-radius: 8px; 
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        z-index: 10000;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        font-size: 14px;
+        max-width: 350px;
+      ">
+        ⏳ <strong>Generating Word Document...</strong><br>
+        <small>Please wait while we create your document</small>
+      </div>
+    `;
+    document.body.appendChild(loadingNotification);
+    
     try {
       const latestVersion = doc.versions[doc.versions.length - 1];
+      if (!latestVersion) {
+        throw new Error('Document has no versions available');
+      }
+      
       const sections = latestVersion.sections || [];
       console.log('Processing sections:', sections.length);
+      console.log('Sections data:', sections.map(s => ({ key: s.key, textLength: s.text?.length || 0 })));
 
       // Create document title
       const titleParagraph = new Paragraph({
@@ -2149,82 +2461,150 @@ export default function App(){
         })
       ];
 
-      // Create section paragraphs
+      // Create section paragraphs with improved error handling
       const sectionParagraphs = [];
-      sections.forEach((section, index) => {
-        // Section heading
-        sectionParagraphs.push(
-          new Paragraph({
-            text: section.key || `Section ${index + 1}`,
-            heading: HeadingLevel.HEADING_1,
-            spacing: { before: 400, after: 200 }
-          })
-        );
-
-        // Section content - convert HTML to plain text and create paragraphs
-        let content = section.text || '';
-        
-        if (!content.trim()) {
+      
+      try {
+        sections.forEach((section, index) => {
+          console.log(`Processing section ${index + 1}: ${section.key}`);
+          
+          // Section heading - validate section key
+          const sectionTitle = (section.key || `Section ${index + 1}`).toString();
           sectionParagraphs.push(
             new Paragraph({
-              text: 'No content',
-              italics: true,
-              spacing: { after: 400 }
+              text: sectionTitle,
+              heading: HeadingLevel.HEADING_1,
+              spacing: { before: 400, after: 200 }
             })
           );
-        } else {
-          // Better HTML processing - preserve line breaks and structure
-          content = content
-            .replace(/<br\s*\/?>/gi, '\n')  // Convert <br> to line breaks
-            .replace(/<\/p>/gi, '\n\n')     // Convert </p> to double line breaks
-            .replace(/<p[^>]*>/gi, '')      // Remove <p> tags
-            .replace(/<[^>]*>/g, '')        // Remove all other HTML tags
-            .replace(/\n\s*\n\s*\n/g, '\n\n') // Clean up excessive line breaks
-            .trim();
 
-          const contentLines = content.split('\n').filter(line => line.trim());
+          // Section content - safer HTML processing
+          let content = '';
+          try {
+            content = section.text || '';
+            if (typeof content !== 'string') {
+              content = String(content);
+            }
+          } catch (contentError) {
+            console.warn(`Error processing content for section ${sectionTitle}:`, contentError);
+            content = 'Content processing error';
+          }
           
-          contentLines.forEach((line, lineIndex) => {
-            const trimmedLine = line.trim();
-            if (trimmedLine) {
-              // Check if line might be a heading (starts with number or is all caps)
-              const isHeading = /^(\d+\.|\d+\)|\w+\.|[A-Z\s]{3,}:)/.test(trimmedLine) || 
-                               (trimmedLine.length < 50 && trimmedLine === trimmedLine.toUpperCase());
+          if (!content.trim()) {
+            sectionParagraphs.push(
+              new Paragraph({
+                text: 'No content available',
+                italics: true,
+                spacing: { after: 400 }
+              })
+            );
+          } else {
+            try {
+              // More robust HTML processing
+              let cleanContent = content
+                .replace(/<script[^>]*>.*?<\/script>/gis, '') // Remove scripts
+                .replace(/<style[^>]*>.*?<\/style>/gis, '')   // Remove styles
+                .replace(/<br\s*\/?>/gi, '\n')               // Convert <br> to line breaks
+                .replace(/<\/p>/gi, '\n\n')                  // Convert </p> to double line breaks
+                .replace(/<p[^>]*>/gi, '')                   // Remove <p> tags
+                .replace(/<[^>]*>/g, '')                     // Remove all other HTML tags
+                .replace(/&nbsp;/g, ' ')                     // Replace &nbsp; with space
+                .replace(/&amp;/g, '&')                     // Decode HTML entities
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&quot;/g, '"')
+                .replace(/&#39;/g, "'")
+                .replace(/\n\s*\n\s*\n/g, '\n\n')          // Clean up excessive line breaks
+                .trim();
+
+              // If content is still too complex, use simple approach
+              if (cleanContent.length > 5000) {
+                cleanContent = cleanContent.substring(0, 5000) + '... (content truncated for Word export)';
+              }
+
+              // Split into manageable chunks
+              const contentLines = cleanContent.split('\n').filter(line => line.trim());
               
+              if (contentLines.length === 0) {
+                sectionParagraphs.push(
+                  new Paragraph({
+                    text: 'Content could not be processed',
+                    italics: true,
+                    spacing: { after: 400 }
+                  })
+                );
+              } else {
+                contentLines.forEach((line, lineIndex) => {
+                  const trimmedLine = line.trim().substring(0, 1000); // Limit line length
+                  if (trimmedLine) {
+                    try {
+                      sectionParagraphs.push(
+                        new Paragraph({
+                          text: trimmedLine,
+                          spacing: { after: 120 }
+                        })
+                      );
+                    } catch (paragraphError) {
+                      console.warn(`Error creating paragraph for line: ${trimmedLine.substring(0, 50)}...`, paragraphError);
+                      // Skip this line and continue
+                    }
+                  }
+                });
+              }
+            } catch (processingError) {
+              console.warn(`Error processing content for section ${sectionTitle}:`, processingError);
               sectionParagraphs.push(
                 new Paragraph({
-                  text: trimmedLine,
-                  spacing: { after: isHeading ? 200 : 120 },
-                  ...(isHeading && { heading: HeadingLevel.HEADING_2 })
-                })
-              );
-            } else {
-              // Add empty line for spacing
-              sectionParagraphs.push(
-                new Paragraph({
-                  text: '',
-                  spacing: { after: 120 }
+                  text: 'Content processing error - please check original document',
+                  italics: true,
+                  spacing: { after: 400 }
                 })
               );
             }
-          });
-        }
-      });
+          }
+        });
+        
+        console.log('Successfully processed all sections, total paragraphs:', sectionParagraphs.length);
+      } catch (sectionError) {
+        console.error('Error processing sections:', sectionError);
+        throw new Error('Failed to process document sections: ' + sectionError.message);
+      }
 
-      // Create the Word document
-      const wordDoc = new Document({
-        sections: [{
-          properties: {},
-          children: [
-            titleParagraph,
-            ...infoParagraphs,
-            ...sectionParagraphs
-          ]
-        }]
-      });
+      // Create the Word document with better error handling
+      console.log('Creating Word document...');
+      let wordDoc;
+      try {
+        wordDoc = new Document({
+          sections: [{
+            properties: {},
+            children: [
+              titleParagraph,
+              ...infoParagraphs,
+              ...sectionParagraphs
+            ]
+          }]
+        });
+        console.log('Word document created successfully');
+      } catch (docError) {
+        console.error('Error creating Word document:', docError);
+        throw new Error('Failed to create Word document structure: ' + docError.message);
+      }
 
-      // Generate and save the document
-      const buffer = await Packer.toBuffer(wordDoc);
+      // Generate buffer with timeout protection
+      console.log('Converting to buffer...');
+      let buffer;
+      try {
+        const bufferPromise = Packer.toBuffer(wordDoc);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Buffer generation timeout')), 30000)
+        );
+        
+        buffer = await Promise.race([bufferPromise, timeoutPromise]);
+        console.log('Buffer generated successfully, size:', buffer.byteLength, 'bytes');
+      } catch (bufferError) {
+        console.error('Error generating buffer:', bufferError);
+        throw new Error('Failed to convert document to buffer: ' + bufferError.message);
+      }
       
       // Create a clean filename
       const cleanTitle = (doc.title || 'Document')
@@ -2240,25 +2620,57 @@ export default function App(){
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
       });
       
-      // Try file-saver first, fallback to native download
+      console.log('Generated buffer size:', buffer.byteLength, 'bytes');
+      console.log('Attempting to create blob with filename:', filename);
+      
+      // Try different export methods for browser compatibility
       try {
-        console.log('Attempting download with file-saver...');
-        saveAs(blob, filename);
-        console.log('file-saver download initiated');
-      } catch (fileSaverError) {
-        console.error('file-saver failed, trying native download:', fileSaverError);
+        console.log('Attempting to create blob using toBlob method...');
+        const blob = await Packer.toBlob(wordDoc);
+        console.log('Blob created successfully, size:', blob.size);
         
-        // Fallback to native browser download
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        console.log('Native download initiated');
+        if (typeof saveAs === 'function') {
+          saveAs(blob, filename);
+          console.log('file-saver download initiated successfully');
+        } else {
+          throw new Error('saveAs function not available');
+        }
+      } catch (blobError) {
+        console.error('toBlob method failed, trying buffer method:', blobError);
+        
+        try {
+          console.log('Attempting to create buffer...');
+          const buffer = await Packer.toBuffer(wordDoc);
+          const blob = new Blob([buffer], { 
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
+          });
+          
+          console.log('Buffer blob created successfully, size:', blob.size);
+          
+          if (typeof saveAs === 'function') {
+            saveAs(blob, filename);
+            console.log('file-saver with buffer download initiated successfully');
+          } else {
+            // Native download as last resort
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            
+            setTimeout(() => {
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }, 100);
+            
+            console.log('Native download initiated successfully');
+          }
+        } catch (bufferError) {
+          console.error('Buffer method also failed:', bufferError);
+          throw new Error(`Both blob and buffer methods failed: ${bufferError.message}`);
+        }
       }
       
       // Add audit log
@@ -2291,34 +2703,100 @@ export default function App(){
       }, 5000);
 
     } catch (error) {
-      console.error('Export failed:', error);
+      console.error('Primary export failed:', error);
       console.error('Error details:', error.message, error.stack);
+      console.error('Document that failed:', doc);
       
-      // Error notification
-      const notification = document.createElement('div');
-      notification.innerHTML = `
-        <div style="
-          position: fixed; 
-          top: 20px; 
-          right: 20px; 
-          background: #f8d7da; 
-          color: #721c24; 
-          padding: 12px 16px; 
-          border-radius: 8px; 
-          box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-          z-index: 10000;
-          font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-          font-size: 14px;
-          max-width: 350px;
-        ">
-          ❌ <strong>Export Failed</strong><br>
-          <small>Please try again or check the console for details.</small>
-        </div>
-      `;
-      document.body.appendChild(notification);
-      setTimeout(() => {
-        notification.remove();
-      }, 5000);
+      // Try multiple fallback methods in sequence
+      console.log('Attempting simple export fallback...');
+      let fallbackSuccess = await exportToWordSimple(doc);
+      
+      // If simple export fails, try HTML-based export
+      if (!fallbackSuccess) {
+        console.log('Simple export failed, trying HTML-based export...');
+        fallbackSuccess = await exportToWordHTML(doc);
+      }
+      
+      // If HTML export fails, try plain text as ultimate fallback
+      if (!fallbackSuccess) {
+        console.log('HTML export failed, trying plain text export...');
+        fallbackSuccess = await exportToWordText(doc);
+      }
+      
+      if (fallbackSuccess) {
+        // Success notification for fallback - determine which method worked
+        let methodUsed = 'alternative format';
+        let bgColor = '#fff3cd';
+        let textColor = '#856404';
+        
+        // Check which files were likely created (rough heuristic)
+        const fileName = doc.title || 'Document';
+        if (fileName.includes('simple')) methodUsed = 'simplified Word format';
+        else if (fileName.includes('.doc')) methodUsed = 'HTML-based Word format';
+        else if (fileName.includes('.txt')) {
+          methodUsed = 'plain text format';
+          bgColor = '#ffeaa7';
+          textColor = '#6c5400';
+        }
+        
+        const notification = document.createElement('div');
+        notification.innerHTML = `
+          <div style="
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: ${bgColor}; 
+            color: ${textColor}; 
+            padding: 12px 16px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            z-index: 10000;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 14px;
+            max-width: 400px;
+          ">
+            ⚠️ <strong>Export Completed (Alternative Method)</strong><br>
+            <small>Used ${methodUsed} due to browser compatibility</small>
+          </div>
+        `;
+        document.body.appendChild(notification);
+        setTimeout(() => {
+          notification.remove();
+        }, 6000);
+      } else {
+        // Both methods failed
+        const errorMessage = error.message || 'Unknown error occurred';
+        const notification = document.createElement('div');
+        notification.innerHTML = `
+          <div style="
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: #f8d7da; 
+            color: #721c24; 
+            padding: 12px 16px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            z-index: 10000;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 14px;
+            max-width: 400px;
+          ">
+            ❌ <strong>Export Failed</strong><br>
+            <small>${errorMessage}</small><br>
+            <small style="opacity: 0.8;">Both standard and simplified exports failed</small>
+          </div>
+        `;
+        document.body.appendChild(notification);
+        setTimeout(() => {
+          notification.remove();
+        }, 8000);
+      }
+    } finally {
+      // Remove loading notification
+      if (loadingNotification && loadingNotification.parentNode) {
+        loadingNotification.remove();
+      }
     }
   }
 
@@ -2343,6 +2821,17 @@ export default function App(){
   useEffect(()=>{
     const { docs, audit } = load()
     setDocs(docs); setAudit(audit)
+    
+    // Make test functions available in console for debugging
+    window.testWordExportLibraries = testWordExportLibraries;
+    window.exportToWordSimple = exportToWordSimple;
+    window.exportToWordHTML = exportToWordHTML;
+    window.exportToWordText = exportToWordText;
+    console.log('Debug functions available in console:');
+    console.log('- testWordExportLibraries() - Test docx library');
+    console.log('- exportToWordSimple(doc) - Simple export method');
+    console.log('- exportToWordHTML(doc) - HTML-based export method');
+    console.log('- exportToWordText(doc) - Plain text export method');
   },[])
   useEffect(()=> save(docs, audit), [docs, audit])
 
@@ -2719,9 +3208,9 @@ export default function App(){
             setUploadedWordContent(null);
             setUploadedFileName('');
           }}
-          onCreateDocument={(sections, docType, docTitle) => {
+          onCreateDocument={(sections, docType, docTitle, docStatus) => {
             try {
-              console.log('Creating document with:', { sections, docType, docTitle });
+              console.log('Creating document with:', { sections, docType, docTitle, docStatus });
               console.log('Word content available:', !!uploadedWordContent);
               
               // Process the Word content and create document
@@ -2729,13 +3218,26 @@ export default function App(){
                 uploadedWordContent, 
                 sections, 
                 docType, 
-                docTitle
+                docTitle,
+                docStatus
               );
               
               console.log('New document created:', newDoc);
               
               setDocs([newDoc, ...docs]);
-              setSelected(newDoc);
+              
+              // If document is Active or Archived, show in Word view instead of editor
+              if (docStatus === 'Active' || docStatus === 'Archived') {
+                setWordViewDoc(newDoc);
+                setShowWordView(true);
+                // Show success message for protected documents
+                setTimeout(() => {
+                  alert(`✅ Document "${docTitle}" has been created with ${docStatus} status and is now protected from editing. You are viewing it in read-only mode.`);
+                }, 500);
+              } else {
+                setSelected(newDoc);
+              }
+              
               setShowSectionDefiner(false);
               setUploadedWordContent(null);
               setUploadedFileName('');
@@ -2755,6 +3257,7 @@ export default function App(){
             setShowWordView(false);
             setWordViewDoc(null);
           }}
+          onExport={exportToWord}
         />
       )}
     </div>
