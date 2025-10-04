@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { CKEditor } from '@ckeditor/ckeditor5-react';
 import ClassicEditor from '@ckeditor/ckeditor5-build-classic';
 import * as Diff from 'diff'
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx'
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType, BorderStyle } from 'docx'
 import { saveAs } from 'file-saver'
 import SectionDefinerPanel from './SectionDefinerPanel'
 
@@ -2116,6 +2116,275 @@ export default function App(){
     }
   }
 
+  // Helper function to detect if content contains HTML tables
+  function hasHTMLTables(htmlContent) {
+    return /<table[^>]*>[\s\S]*?<\/table>/gi.test(htmlContent);
+  }
+
+  // Helper function to extract and convert HTML tables to Word table format
+  function parseHTMLTables(htmlContent) {
+    const elements = [];
+    let lastIndex = 0;
+    
+    // Find all tables in the content
+    const tableRegex = /<table[^>]*>([\s\S]*?)<\/table>/gi;
+    let match;
+    
+    while ((match = tableRegex.exec(htmlContent)) !== null) {
+      // Add text before table as regular paragraph
+      const beforeTable = htmlContent.substring(lastIndex, match.index).trim();
+      if (beforeTable) {
+        const cleanText = beforeTable
+          .replace(/<[^>]*>/g, '')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .trim();
+        
+        if (cleanText) {
+          elements.push({
+            type: 'paragraph',
+            content: cleanText
+          });
+        }
+      }
+      
+      // Parse the table
+      const tableHTML = match[1];
+      const table = parseHTMLTable(tableHTML);
+      if (table) {
+        elements.push({
+          type: 'table',
+          content: table
+        });
+      }
+      
+      lastIndex = match.index + match[0].length;
+    }
+    
+    // Add remaining text after last table
+    const afterTables = htmlContent.substring(lastIndex).trim();
+    if (afterTables) {
+      const cleanText = afterTables
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .trim();
+      
+      if (cleanText) {
+        elements.push({
+          type: 'paragraph',
+          content: cleanText
+        });
+      }
+    }
+    
+    return elements;
+  }
+
+  // Helper function to parse individual HTML table
+  function parseHTMLTable(tableHTML) {
+    try {
+      // Create a temporary DOM element to parse the table
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = `<table>${tableHTML}</table>`;
+      const table = tempDiv.querySelector('table');
+      
+      if (!table) return null;
+      
+      const rows = [];
+      const tableRows = table.querySelectorAll('tr');
+      
+      tableRows.forEach(tr => {
+        const cells = [];
+        const tableCells = tr.querySelectorAll('td, th');
+        
+        tableCells.forEach(cell => {
+          const cellText = cell.textContent || cell.innerText || '';
+          const cleanCellText = cellText
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .trim();
+          
+          cells.push({
+            text: cleanCellText,
+            isHeader: cell.tagName.toLowerCase() === 'th'
+          });
+        });
+        
+        if (cells.length > 0) {
+          rows.push(cells);
+        }
+      });
+      
+      return rows.length > 0 ? rows : null;
+    } catch (error) {
+      console.error('Error parsing HTML table:', error);
+      return null;
+    }
+  }
+
+  // Helper function to create Word table from parsed data
+  function createWordTable(tableData) {
+    if (!tableData || tableData.length === 0) return null;
+    
+    try {
+      const tableRows = tableData.map(rowData => {
+        const tableCells = rowData.map(cellData => {
+          return new TableCell({
+            children: [
+              new Paragraph({
+                text: cellData.text,
+                bold: cellData.isHeader
+              })
+            ],
+            width: {
+              size: Math.floor(100 / rowData.length),
+              type: WidthType.PERCENTAGE,
+            }
+          });
+        });
+        
+        return new TableRow({
+          children: tableCells
+        });
+      });
+      
+      return new Table({
+        rows: tableRows,
+        width: {
+          size: 100,
+          type: WidthType.PERCENTAGE,
+        },
+        borders: {
+          top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+          bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+          left: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+          right: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+          insideHorizontal: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+          insideVertical: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
+        },
+      });
+    } catch (error) {
+      console.error('Error creating Word table:', error);
+      return null;
+    }
+  }
+
+  // Helper function to convert HTML tables to readable text format
+  function convertTablesToText(htmlContent) {
+    try {
+      let textContent = htmlContent;
+      
+      // Find and replace each table with text representation
+      const tableRegex = /<table[^>]*>([\s\S]*?)<\/table>/gi;
+      textContent = textContent.replace(tableRegex, (match, tableHTML) => {
+        try {
+          // Parse the table
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = `<table>${tableHTML}</table>`;
+          const table = tempDiv.querySelector('table');
+          
+          if (!table) return '[Table could not be processed]';
+          
+          const rows = table.querySelectorAll('tr');
+          let tableText = '\n[TABLE START]\n';
+          
+          rows.forEach((row, rowIndex) => {
+            const cells = row.querySelectorAll('td, th');
+            const cellTexts = [];
+            
+            cells.forEach(cell => {
+              const cellText = (cell.textContent || cell.innerText || '')
+                .replace(/&nbsp;/g, ' ')
+                .replace(/&amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&quot;/g, '"')
+                .trim();
+              cellTexts.push(cellText || '[empty]');
+            });
+            
+            // Create row text with column separators
+            if (cellTexts.length > 0) {
+              tableText += cellTexts.join(' | ') + '\n';
+              
+              // Add separator line after header row
+              if (rowIndex === 0 && row.querySelector('th')) {
+                tableText += cellTexts.map(cell => '-'.repeat(Math.min(cell.length, 10))).join('-+-') + '\n';
+              }
+            }
+          });
+          
+          tableText += '[TABLE END]\n\n';
+          return tableText;
+        } catch (error) {
+          console.error('Error converting table to text:', error);
+          return '[Table conversion error]';
+        }
+      });
+      
+      // Clean up remaining HTML
+      textContent = textContent.replace(/<[^>]*>/g, '');
+      textContent = textContent.replace(/&nbsp;/g, ' ');
+      textContent = textContent.replace(/&amp;/g, '&');
+      textContent = textContent.replace(/&lt;/g, '<');
+      textContent = textContent.replace(/&gt;/g, '>');
+      textContent = textContent.replace(/&quot;/g, '"');
+      
+      return textContent.trim();
+    } catch (error) {
+      console.error('Error in convertTablesToText:', error);
+      return htmlContent.replace(/<[^>]*>/g, '').trim();
+    }
+  }
+
+  // Helper function to process section content and convert tables
+  function processSectionContent(content) {
+    if (!content || typeof content !== 'string') {
+      return [{
+        type: 'paragraph',
+        content: 'No content available'
+      }];
+    }
+    
+    // Check if content has tables
+    if (hasHTMLTables(content)) {
+      console.log('Found tables in content, parsing...');
+      return parseHTMLTables(content);
+    } else {
+      // Regular text processing
+      const cleanContent = content
+        .replace(/<script[^>]*>.*?<\/script>/gis, '')
+        .replace(/<style[^>]*>.*?<\/style>/gis, '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<p[^>]*>/gi, '')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/\n\s*\n\s*\n/g, '\n\n')
+        .trim();
+      
+      return [{
+        type: 'paragraph',
+        content: cleanContent
+      }];
+    }
+  }
+
   // Simple export function as fallback
   async function exportToWordSimple(doc) {
     console.log('Using simple export method for doc:', doc.title);
@@ -2137,7 +2406,7 @@ export default function App(){
         })
       ];
       
-      // Add sections with minimal processing
+      // Add sections with table processing
       sections.forEach((section, index) => {
         children.push(
           new Paragraph({
@@ -2147,17 +2416,51 @@ export default function App(){
           })
         );
         
-        // Simple text content
-        const text = section.text ? 
-          section.text.replace(/<[^>]*>/g, '').replace(/&[^;]+;/g, ' ').trim() : 
-          'No content';
-          
-        children.push(
-          new Paragraph({
-            text: text.substring(0, 2000), // Limit text length
-            spacing: { after: 200 }
-          })
-        );
+        try {
+          // Check if section has tables
+          if (section.text && hasHTMLTables(section.text)) {
+            const processedElements = processSectionContent(section.text);
+            
+            processedElements.forEach(element => {
+              if (element.type === 'table' && element.content) {
+                const wordTable = createWordTable(element.content);
+                if (wordTable) {
+                  children.push(wordTable);
+                  children.push(new Paragraph({ text: '', spacing: { after: 200 } }));
+                }
+              } else if (element.type === 'paragraph' && element.content) {
+                const limitedContent = element.content.substring(0, 1500);
+                children.push(
+                  new Paragraph({
+                    text: limitedContent,
+                    spacing: { after: 200 }
+                  })
+                );
+              }
+            });
+          } else {
+            // Simple text content for non-table sections
+            const text = section.text ? 
+              section.text.replace(/<[^>]*>/g, '').replace(/&[^;]+;/g, ' ').trim() : 
+              'No content';
+              
+            children.push(
+              new Paragraph({
+                text: text.substring(0, 2000), // Limit text length
+                spacing: { after: 200 }
+              })
+            );
+          }
+        } catch (sectionError) {
+          console.warn(`Error processing section ${section.key}:`, sectionError);
+          children.push(
+            new Paragraph({
+              text: 'Section processing error',
+              italics: true,
+              spacing: { after: 200 }
+            })
+          );
+        }
       });
       
       const simpleDoc = new Document({
@@ -2199,6 +2502,25 @@ export default function App(){
             p { margin-bottom: 8pt; text-align: justify; }
             .doc-info { margin-bottom: 20pt; }
             .doc-info p { margin-bottom: 4pt; }
+            table { 
+              border-collapse: collapse; 
+              width: 100%; 
+              margin: 10pt 0; 
+              font-size: 11pt;
+            }
+            th, td { 
+              border: 1px solid #000; 
+              padding: 6pt 8pt; 
+              text-align: left; 
+              vertical-align: top;
+            }
+            th { 
+              background-color: #f2f2f2; 
+              font-weight: bold; 
+            }
+            tr:nth-child(even) { 
+              background-color: #f9f9f9; 
+            }
           </style>
         </head>
         <body>
@@ -2212,14 +2534,21 @@ export default function App(){
           </div>
       `;
       
-      // Add sections
+      // Add sections with preserved table formatting
       sections.forEach((section, index) => {
         const sectionTitle = section.key || `Section ${index + 1}`;
         let content = section.text || 'No content';
         
-        // Clean HTML content
+        // Clean HTML content but preserve tables
         content = content.replace(/<script[^>]*>.*?<\/script>/gi, '');
         content = content.replace(/<style[^>]*>.*?<\/style>/gi, '');
+        
+        // Preserve table structure - don't remove table tags
+        // But clean up other problematic elements
+        content = content.replace(/<div[^>]*>/gi, '');
+        content = content.replace(/<\/div>/gi, '');
+        content = content.replace(/<span[^>]*>/gi, '');
+        content = content.replace(/<\/span>/gi, '');
         
         htmlContent += `
           <h2>${sectionTitle}</h2>
@@ -2267,23 +2596,35 @@ export default function App(){
       textContent += `Version: ${latestVersion?.version || 'v1.0'}\n\n`;
       textContent += '-'.repeat(50) + '\n\n';
       
-      // Add sections
+      // Add sections with table conversion
       sections.forEach((section, index) => {
         const sectionTitle = section.key || `Section ${index + 1}`;
         let content = section.text || 'No content';
         
-        // Strip HTML tags and decode entities
-        content = content.replace(/<[^>]*>/g, '');
-        content = content.replace(/&nbsp;/g, ' ');
-        content = content.replace(/&amp;/g, '&');
-        content = content.replace(/&lt;/g, '<');
-        content = content.replace(/&gt;/g, '>');
-        content = content.replace(/&quot;/g, '"');
-        content = content.trim();
-        
         textContent += `${sectionTitle}\n`;
         textContent += '-'.repeat(sectionTitle.length) + '\n';
-        textContent += `${content}\n\n`;
+        
+        try {
+          // Check if section has tables
+          if (hasHTMLTables(content)) {
+            // Convert tables to text format
+            content = convertTablesToText(content);
+          } else {
+            // Regular text processing
+            content = content.replace(/<[^>]*>/g, '');
+            content = content.replace(/&nbsp;/g, ' ');
+            content = content.replace(/&amp;/g, '&');
+            content = content.replace(/&lt;/g, '<');
+            content = content.replace(/&gt;/g, '>');
+            content = content.replace(/&quot;/g, '"');
+            content = content.trim();
+          }
+          
+          textContent += `${content}\n\n`;
+        } catch (sectionError) {
+          console.warn(`Error processing section ${sectionTitle}:`, sectionError);
+          textContent += 'Section processing error\n\n';
+        }
       });
       
       // Create blob and download as .txt file (most compatible)
@@ -2500,57 +2841,75 @@ export default function App(){
             );
           } else {
             try {
-              // More robust HTML processing
-              let cleanContent = content
-                .replace(/<script[^>]*>.*?<\/script>/gis, '') // Remove scripts
-                .replace(/<style[^>]*>.*?<\/style>/gis, '')   // Remove styles
-                .replace(/<br\s*\/?>/gi, '\n')               // Convert <br> to line breaks
-                .replace(/<\/p>/gi, '\n\n')                  // Convert </p> to double line breaks
-                .replace(/<p[^>]*>/gi, '')                   // Remove <p> tags
-                .replace(/<[^>]*>/g, '')                     // Remove all other HTML tags
-                .replace(/&nbsp;/g, ' ')                     // Replace &nbsp; with space
-                .replace(/&amp;/g, '&')                     // Decode HTML entities
-                .replace(/&lt;/g, '<')
-                .replace(/&gt;/g, '>')
-                .replace(/&quot;/g, '"')
-                .replace(/&#39;/g, "'")
-                .replace(/\n\s*\n\s*\n/g, '\n\n')          // Clean up excessive line breaks
-                .trim();
-
-              // If content is still too complex, use simple approach
-              if (cleanContent.length > 5000) {
-                cleanContent = cleanContent.substring(0, 5000) + '... (content truncated for Word export)';
-              }
-
-              // Split into manageable chunks
-              const contentLines = cleanContent.split('\n').filter(line => line.trim());
+              // Process section content with table awareness
+              const processedElements = processSectionContent(content);
               
-              if (contentLines.length === 0) {
-                sectionParagraphs.push(
-                  new Paragraph({
-                    text: 'Content could not be processed',
-                    italics: true,
-                    spacing: { after: 400 }
-                  })
-                );
-              } else {
-                contentLines.forEach((line, lineIndex) => {
-                  const trimmedLine = line.trim().substring(0, 1000); // Limit line length
-                  if (trimmedLine) {
-                    try {
+              processedElements.forEach((element, elementIndex) => {
+                try {
+                  if (element.type === 'table' && element.content) {
+                    // Create Word table
+                    const wordTable = createWordTable(element.content);
+                    if (wordTable) {
+                      sectionParagraphs.push(wordTable);
+                      // Add spacing after table
                       sectionParagraphs.push(
                         new Paragraph({
-                          text: trimmedLine,
-                          spacing: { after: 120 }
+                          text: '',
+                          spacing: { after: 200 }
                         })
                       );
-                    } catch (paragraphError) {
-                      console.warn(`Error creating paragraph for line: ${trimmedLine.substring(0, 50)}...`, paragraphError);
-                      // Skip this line and continue
+                    } else {
+                      // Fallback if table creation fails
+                      sectionParagraphs.push(
+                        new Paragraph({
+                          text: '[Table content could not be processed]',
+                          italics: true,
+                          spacing: { after: 200 }
+                        })
+                      );
+                    }
+                  } else if (element.type === 'paragraph' && element.content) {
+                    // Process regular paragraph content
+                    const lines = element.content.split('\n').filter(line => line.trim());
+                    
+                    if (lines.length === 0) {
+                      sectionParagraphs.push(
+                        new Paragraph({
+                          text: 'No content available',
+                          italics: true,
+                          spacing: { after: 200 }
+                        })
+                      );
+                    } else {
+                      lines.forEach((line, lineIndex) => {
+                        const trimmedLine = line.trim().substring(0, 1000);
+                        if (trimmedLine) {
+                          try {
+                            sectionParagraphs.push(
+                              new Paragraph({
+                                text: trimmedLine,
+                                spacing: { after: 120 }
+                              })
+                            );
+                          } catch (paragraphError) {
+                            console.warn(`Error creating paragraph: ${trimmedLine.substring(0, 50)}...`, paragraphError);
+                          }
+                        }
+                      });
                     }
                   }
-                });
-              }
+                } catch (elementError) {
+                  console.warn(`Error processing element ${elementIndex}:`, elementError);
+                  sectionParagraphs.push(
+                    new Paragraph({
+                      text: 'Element processing error',
+                      italics: true,
+                      spacing: { after: 120 }
+                    })
+                  );
+                }
+              });
+              
             } catch (processingError) {
               console.warn(`Error processing content for section ${sectionTitle}:`, processingError);
               sectionParagraphs.push(
@@ -2827,11 +3186,18 @@ export default function App(){
     window.exportToWordSimple = exportToWordSimple;
     window.exportToWordHTML = exportToWordHTML;
     window.exportToWordText = exportToWordText;
+    window.hasHTMLTables = hasHTMLTables;
+    window.parseHTMLTables = parseHTMLTables;
+    window.convertTablesToText = convertTablesToText;
+    
     console.log('Debug functions available in console:');
     console.log('- testWordExportLibraries() - Test docx library');
     console.log('- exportToWordSimple(doc) - Simple export method');
     console.log('- exportToWordHTML(doc) - HTML-based export method');
     console.log('- exportToWordText(doc) - Plain text export method');
+    console.log('- hasHTMLTables(htmlContent) - Check if content has tables');
+    console.log('- parseHTMLTables(htmlContent) - Parse HTML tables');
+    console.log('- convertTablesToText(htmlContent) - Convert tables to text format');
   },[])
   useEffect(()=> save(docs, audit), [docs, audit])
 
