@@ -1771,11 +1771,298 @@ function download(filename, text){
   const a = document.createElement('a')
   const file = new Blob([text], { type: 'application/json' })
   a.href = URL.createObjectURL(file)
-  a.download = filename
+  a.downloa  // Test extraction methods:
+  extractSectionContentEnhanced(content, "ABBREVIATIONS", sections)
+  extractAllContentByStructure(content, sections)
+  
+  // Check what was converted:
+  console.log(uploadedWordContent) // See HTML conversiond = filename
   document.body.appendChild(a)
   a.click()
   a.remove()
 }
+
+// Enhanced function to extract content with better formatting preservation
+const extractSectionContentEnhanced = (wordContent, sectionName, allSections) => {
+  console.log(`Enhanced extraction for section: "${sectionName}"`);
+  
+  if (!wordContent) return '<p><em>No content available</em></p>';
+  
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(wordContent, 'text/html');
+  
+  // Normalize section name for matching
+  const normalizeSection = (text) => {
+    return text.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+  
+  const normalizedTarget = normalizeSection(sectionName);
+  
+  // Get all elements in document order
+  const allElements = Array.from(doc.querySelectorAll('*')).filter(el => {
+    const text = el.textContent.trim();
+    return text.length > 0 && !['script', 'style', 'meta', 'head'].includes(el.tagName.toLowerCase());
+  });
+  
+  let sectionStartIndex = -1;
+  let sectionEndIndex = allElements.length;
+  
+  // Find section start with improved matching
+  for (let i = 0; i < allElements.length; i++) {
+    const element = allElements[i];
+    const elementText = normalizeSection(element.textContent.trim());
+    
+    // Multiple matching strategies
+    const isMatch = (
+      elementText === normalizedTarget ||
+      elementText.includes(normalizedTarget) ||
+      normalizedTarget.includes(elementText) ||
+      // Pattern-based matching
+      new RegExp(`^(\\d+[\\.]?\\s*)?${normalizedTarget.replace(/\s+/g, '\\s*')}`, 'i').test(elementText) ||
+      new RegExp(`^([ivxlc]+[\\.]?\\s*)?${normalizedTarget.replace(/\s+/g, '\\s*')}`, 'i').test(elementText) ||
+      // Fuzzy matching for slight variations
+      calculateSimilarity(elementText, normalizedTarget) > 0.8
+    );
+    
+    if (isMatch) {
+      console.log(`Found section start at element ${i}: "${element.textContent.trim()}"`);
+      sectionStartIndex = i;
+      break;
+    }
+  }
+  
+  if (sectionStartIndex === -1) {
+    return `<p><em>Section "${sectionName}" not found in document</em></p>`;
+  }
+  
+  // Find section end by looking for next section header
+  for (let i = sectionStartIndex + 1; i < allElements.length; i++) {
+    const element = allElements[i];
+    const elementText = normalizeSection(element.textContent.trim());
+    
+    // Check if this element starts another section
+    const isAnotherSection = allSections.some(section => {
+      if (section === sectionName) return false;
+      const otherNormalized = normalizeSection(section);
+      return (
+        elementText === otherNormalized ||
+        elementText.includes(otherNormalized) ||
+        new RegExp(`^(\\d+[\\.]?\\s*)?${otherNormalized.replace(/\s+/g, '\\s*')}`, 'i').test(elementText) ||
+        calculateSimilarity(elementText, otherNormalized) > 0.8
+      );
+    });
+    
+    if (isAnotherSection) {
+      console.log(`Found section end at element ${i}: "${element.textContent.trim()}"`);
+      sectionEndIndex = i;
+      break;
+    }
+  }
+  
+  // Extract content between start and end
+  const contentElements = allElements.slice(sectionStartIndex + 1, sectionEndIndex);
+  
+  if (contentElements.length === 0) {
+    return `<p><em>No content found after section "${sectionName}"</em></p>`;
+  }
+  
+  // Build content while preserving structure
+  let content = '';
+  let currentContainer = null;
+  
+  for (const element of contentElements) {
+    const tagName = element.tagName.toLowerCase();
+    const parentTag = element.parentElement?.tagName.toLowerCase();
+    
+    // Skip if element is already included as child of another element we processed
+    const isAlreadyIncluded = contentElements.some(parent => 
+      parent !== element && parent.contains(element)
+    );
+    
+    if (isAlreadyIncluded) continue;
+    
+    // Preserve different content types with proper formatting
+    if (tagName === 'table') {
+      // Preserve entire table structure
+      content += element.outerHTML + '\n\n';
+    } else if (tagName.match(/^h[1-6]$/)) {
+      // Convert headings to appropriate level
+      const level = Math.min(parseInt(tagName.charAt(1)) + 1, 6);
+      content += `<h${level}>${element.innerHTML}</h${level}>\n\n`;
+    } else if (tagName === 'p') {
+      // Preserve paragraphs with all internal formatting
+      content += element.outerHTML + '\n';
+    } else if (tagName === 'div' && element.textContent.trim().length > 0) {
+      // Convert meaningful divs to paragraphs
+      content += `<p>${element.innerHTML}</p>\n`;
+    } else if (tagName.match(/^(ul|ol)$/)) {
+      // Preserve lists
+      content += element.outerHTML + '\n\n';
+    } else if (tagName === 'li' && !element.closest('ul, ol')) {
+      // Handle orphaned list items
+      content += `<p>• ${element.innerHTML}</p>\n`;
+    } else if (tagName === 'blockquote') {
+      // Preserve blockquotes
+      content += element.outerHTML + '\n\n';
+    } else if (element.textContent.trim().length > 0) {
+      // Wrap other text content in paragraphs
+      const text = element.innerHTML || element.textContent;
+      if (text.trim().length > 0) {
+        content += `<p>${text}</p>\n`;
+      }
+    }
+  }
+  
+  // Clean up and validate content
+  content = content
+    .replace(/\n\s*\n\s*\n/g, '\n\n') // Clean excessive newlines
+    .replace(/<p>\s*<\/p>/g, '') // Remove empty paragraphs
+    .trim();
+  
+  if (!content || content.replace(/<[^>]*>/g, '').trim().length < 5) {
+    return `<p><em>Minimal content found for "${sectionName}"</em></p>`;
+  }
+  
+  return content;
+  
+  // Helper function for similarity calculation
+  function calculateSimilarity(str1, str2) {
+    const longer = str1.length > str2.length ? str1 : str2;
+    const shorter = str1.length > str2.length ? str2 : str1;
+    
+    if (longer.length === 0) return 1.0;
+    
+    const editDistance = getEditDistance(longer, shorter);
+    return (longer.length - editDistance) / longer.length;
+  }
+  
+  function getEditDistance(str1, str2) {
+    const matrix = [];
+    for (let i = 0; i <= str2.length; i++) {
+      matrix[i] = [i];
+    }
+    for (let j = 0; j <= str1.length; j++) {
+      matrix[0][j] = j;
+    }
+    for (let i = 1; i <= str2.length; i++) {
+      for (let j = 1; j <= str1.length; j++) {
+        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          );
+        }
+      }
+    }
+    return matrix[str2.length][str1.length];
+  }
+};
+
+// Function to automatically detect sections from Word document
+const detectSectionsFromWordContent = (wordContent) => {
+  console.log('Auto-detecting sections from Word content...');
+  
+  if (!wordContent) return [];
+  
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(wordContent, 'text/html');
+  
+  const detectedSections = [];
+  const seenSections = new Set();
+  
+  // Look for potential section headers in various elements
+  const headerElements = doc.querySelectorAll('h1, h2, h3, h4, h5, h6, p strong, p b, strong, b, td, th, li');
+  
+  for (const element of headerElements) {
+    const text = element.textContent.trim();
+    
+    if (!text || text.length < 2 || text.length > 100) continue;
+    
+    // Clean and normalize the text
+    const cleanText = text
+      .replace(/^\d+\.?\s*/, '') // Remove leading numbers
+      .replace(/^[ivxlc]+\.?\s*/i, '') // Remove Roman numerals
+      .replace(/^[a-z]\.?\s*/i, '') // Remove single letters
+      .replace(/[.:]$/, '') // Remove trailing punctuation
+      .trim();
+    
+    if (!cleanText || cleanText.length < 2) continue;
+    
+    // Check if this looks like a section header
+    const isLikelyHeader = (
+      // Short enough to be a header
+      cleanText.length <= 50 &&
+      // Contains key section words
+      (/^(introduction|purpose|scope|definition|policy|procedure|responsibility|compliance|review|background|objective|principle|requirement|implementation|monitoring|appendix|attachment|conclusion|summary|overview|methodology|analysis|result|discussion|reference|bibliography)/i.test(cleanText) ||
+      // Or is a common section pattern
+      /^(chapter|section|part|article|title)\s/i.test(text) ||
+      // Or looks like an enumerated section
+      /^\d+[\.\)]\s/.test(text) ||
+      /^[ivxlc]+[\.\)]\s/i.test(text) ||
+      // Or is in bold/strong formatting in a paragraph
+      (element.tagName.toLowerCase() === 'strong' || element.tagName.toLowerCase() === 'b') ||
+      // Or is a heading tag
+      /^h[1-6]$/i.test(element.tagName) ||
+      // Or is in a table header
+      element.tagName.toLowerCase() === 'th')
+    );
+    
+    if (isLikelyHeader && !seenSections.has(cleanText.toLowerCase())) {
+      detectedSections.push(cleanText);
+      seenSections.add(cleanText.toLowerCase());
+      console.log(`Detected section: "${cleanText}"`);
+    }
+  }
+  
+  // Sort by appearance order in document
+  return detectedSections;
+};
+
+// Backup method to extract all content if section mapping fails
+const extractAllContentByStructure = (wordContent, sections) => {
+  console.log('Using backup extraction - capturing all content by structure');
+  
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(wordContent, 'text/html');
+  
+  // Get all meaningful content elements
+  const allElements = Array.from(doc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, table, ul, ol, blockquote, div'))
+    .filter(el => el.textContent.trim().length > 0);
+  
+  if (allElements.length === 0) {
+    return sections.map(section => ({
+      key: section,
+      text: '<p><em>No content could be extracted from the document</em></p>'
+    }));
+  }
+  
+  // Divide content roughly equally among sections
+  const elementsPerSection = Math.max(1, Math.floor(allElements.length / sections.length));
+  const sectionsWithContent = sections.map((section, index) => {
+    const startIndex = index * elementsPerSection;
+    const endIndex = index === sections.length - 1 ? allElements.length : (index + 1) * elementsPerSection;
+    
+    const sectionElements = allElements.slice(startIndex, endIndex);
+    let content = sectionElements.map(el => el.outerHTML).join('\n');
+    
+    if (!content.trim()) {
+      content = '<p><em>No content assigned to this section</em></p>';
+    }
+    
+    return {
+      key: section,
+      text: content
+    };
+  });
+  
+  return sectionsWithContent;
+};
 
 // Create document from Word content with defined sections
 const createDocumentFromWordContent = (wordContent, sections, docType, docTitle, docStatus = 'Draft') => {
@@ -1793,42 +2080,122 @@ const createDocumentFromWordContent = (wordContent, sections, docType, docTitle,
       .trim();
   };
 
-  // Function to extract content for a section
+  // Function to extract content for a section with enhanced detection
   const extractSectionContent = (sectionName) => {
     console.log(`Extracting content for section: "${sectionName}"`);
     const normalizedTarget = normalizeSection(sectionName);
     
-    // Look for section headers in multiple places: headings, table cells, strong/bold text
-    const allElements = doc.querySelectorAll('h1, h2, h3, h4, h5, h6, p strong, p b, strong, b, td, th');
+    // Enhanced element selection including list items and divs
+    const allElements = doc.querySelectorAll('h1, h2, h3, h4, h5, h6, p strong, p b, strong, b, td, th, li, div, span[style*="bold"], span[style*="weight"]');
     let startElement = null;
+    let matchScore = 0;
     
+    // Enhanced matching with multiple strategies
     for (const element of allElements) {
       const elementText = normalizeSection(element.textContent);
-      console.log(`Checking element: "${element.textContent}" -> normalized: "${elementText}"`);
+      const originalText = element.textContent.trim();
       
-      // Check for exact match or partial match
-      if (elementText.includes(normalizedTarget) || normalizedTarget.includes(elementText)) {
-        console.log(`Found match for "${sectionName}": "${element.textContent}"`);
+      console.log(`Checking element: "${originalText}" -> normalized: "${elementText}"`);
+      
+      let currentScore = 0;
+      
+      // Strategy 1: Exact match (highest priority)
+      if (elementText === normalizedTarget) {
+        console.log(`Found exact match for "${sectionName}": "${originalText}"`);
         startElement = element;
+        matchScore = 100;
         break;
       }
       
-      // Check for Roman numerals, numbers, or bullet points
+      // Strategy 2: Contains match (partial)
+      if (elementText.includes(normalizedTarget) && normalizedTarget.length > 3) {
+        currentScore = 80;
+      } else if (normalizedTarget.includes(elementText) && elementText.length > 3) {
+        currentScore = 75;
+      }
+      
+      // Strategy 3: Word overlap scoring
+      const targetWords = normalizedTarget.split(' ').filter(w => w.length > 2);
+      const elementWords = elementText.split(' ').filter(w => w.length > 2);
+      const commonWords = targetWords.filter(word => elementWords.includes(word));
+      if (targetWords.length > 0) {
+        const overlapScore = (commonWords.length / targetWords.length) * 70;
+        if (overlapScore > currentScore) currentScore = overlapScore;
+      }
+      
+      // Strategy 4: Pattern matching with enhanced regex
       const patterns = [
-        new RegExp(`\\b(i{1,3}v?|v|ix?)\\s*\\.?\\s*${normalizedTarget.replace(/\s+/g, '\\s+')}`, 'i'),
-        new RegExp(`\\b\\d+\\.?\\s*${normalizedTarget.replace(/\s+/g, '\\s+')}`, 'i'),
-        new RegExp(`^\\s*${normalizedTarget.replace(/\s+/g, '\\s+')}\\s*:?$`, 'i')
+        // Roman numerals with various formats
+        new RegExp(`\\b(i{1,4}|iv|v|vi{1,3}|ix|x|xi{1,3})\\s*[.:]?\\s*${normalizedTarget.replace(/\s+/g, '\\s+')}`, 'i'),
+        // Numbers with various formats
+        new RegExp(`\\b\\d+(\\.\\d+)*[.:]?\\s*${normalizedTarget.replace(/\s+/g, '\\s+')}`, 'i'),
+        // Letters with dots or parentheses
+        new RegExp(`\\b[a-z]\\s*[.)]\\s*${normalizedTarget.replace(/\s+/g, '\\s+')}`, 'i'),
+        // Section keywords
+        new RegExp(`(section|chapter|part|article)\\s*\\d*[.:]?\\s*${normalizedTarget.replace(/\s+/g, '\\s+')}`, 'i'),
+        // Colon or dash separated
+        new RegExp(`${normalizedTarget.replace(/\s+/g, '\\s+')}\\s*[:–-]`, 'i'),
+        // Bracketed or quoted
+        new RegExp(`[\\[("']${normalizedTarget.replace(/\s+/g, '\\s+')}[\\])"']`, 'i')
       ];
       
       for (const pattern of patterns) {
-        if (pattern.test(elementText)) {
-          console.log(`Found pattern match for "${sectionName}": "${element.textContent}"`);
-          startElement = element;
+        if (pattern.test(originalText) || pattern.test(elementText)) {
+          console.log(`Found pattern match for "${sectionName}": "${originalText}"`);
+          currentScore = Math.max(currentScore, 85);
           break;
         }
       }
       
-      if (startElement) break;
+      // Strategy 5: Fuzzy matching for typos and variations
+      if (currentScore < 50 && elementText.length > 0 && normalizedTarget.length > 0) {
+        const similarity = calculateStringSimilarity(elementText, normalizedTarget);
+        if (similarity > 0.7) {
+          currentScore = similarity * 60;
+        }
+      }
+      
+      // Update best match if this score is higher
+      if (currentScore > matchScore && currentScore > 40) {
+        startElement = element;
+        matchScore = currentScore;
+        console.log(`New best match for "${sectionName}": "${originalText}" (score: ${currentScore})`);
+      }
+    }
+    
+    // Helper function for string similarity (Levenshtein-based)
+    function calculateStringSimilarity(str1, str2) {
+      const longer = str1.length > str2.length ? str1 : str2;
+      const shorter = str1.length > str2.length ? str2 : str1;
+      
+      if (longer.length === 0) return 1.0;
+      
+      const editDistance = getEditDistance(longer, shorter);
+      return (longer.length - editDistance) / longer.length;
+    }
+    
+    function getEditDistance(str1, str2) {
+      const matrix = [];
+      for (let i = 0; i <= str2.length; i++) {
+        matrix[i] = [i];
+      }
+      for (let j = 0; j <= str1.length; j++) {
+        matrix[0][j] = j;
+      }
+      for (let i = 1; i <= str2.length; i++) {
+        for (let j = 1; j <= str1.length; j++) {
+          if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+            matrix[i][j] = matrix[i - 1][j - 1];
+          } else {
+            matrix[i][j] = Math.min(
+              matrix[i - 1][j - 1] + 1,
+              matrix[i][j - 1] + 1,
+              matrix[i - 1][j] + 1
+            );
+          }
+        }
+      }
+      return matrix[str2.length][str1.length];
     }
     
     if (!startElement) {
@@ -1919,46 +2286,142 @@ const createDocumentFromWordContent = (wordContent, sections, docType, docTitle,
       }
       
     } else {
-      // Regular heading or text element - use original logic
-      let currentElement = startElement.nextElementSibling;
+      // Enhanced content extraction for regular elements
+      console.log(`Extracting content after element: "${startElement.textContent.trim()}"`);
+      
       const startLevel = parseInt(startElement.tagName.charAt(1)) || 6;
+      const contentElements = [];
+      let currentElement = startElement.nextElementSibling;
       
-      console.log(`Extracting content after heading: "${startElement.textContent}"`);
-      
+      // First pass: collect all relevant content elements
       while (currentElement) {
         const tagName = currentElement.tagName.toLowerCase();
+        const elementText = currentElement.textContent.trim();
         
-        // Stop if we hit another heading of same or higher level
+        // Stop conditions with enhanced logic
+        let shouldStop = false;
+        
+        // Stop at same or higher level headings
         if (tagName.match(/^h[1-6]$/)) {
           const currentLevel = parseInt(tagName.charAt(1));
           if (currentLevel <= startLevel) {
-            console.log(`Stopped at next heading: "${currentElement.textContent}"`);
-            break;
+            console.log(`Stopped at heading level ${currentLevel}: "${elementText}"`);
+            shouldStop = true;
           }
         }
         
-        // Stop if we hit another strong/bold that looks like a section header
-        if ((tagName === 'strong' || tagName === 'b') && currentElement.textContent.trim().length > 0) {
-          const nextText = normalizeSection(currentElement.textContent);
-          if (sections.some(s => normalizeSection(s) === nextText)) {
-            console.log(`Stopped at next section: "${currentElement.textContent}"`);
-            break;
+        // Stop at elements that look like section headers
+        if (!shouldStop && elementText.length > 0 && elementText.length < 100) {
+          const isLikelyHeader = (
+            // Bold/strong elements that match other sections
+            ((tagName === 'strong' || tagName === 'b') && 
+             sections.some(s => normalizeSection(s) === normalizeSection(elementText))) ||
+            // Elements with section-like patterns
+            /^(section|chapter|part|article|\d+[\.\)]|\w+[\.\)])/i.test(elementText) ||
+            // Elements in a paragraph that are bold and short
+            (currentElement.parentElement?.tagName.toLowerCase() === 'p' && 
+             (tagName === 'strong' || tagName === 'b') && elementText.length < 50)
+          );
+          
+          if (isLikelyHeader) {
+            console.log(`Stopped at likely section header: "${elementText}"`);
+            shouldStop = true;
           }
         }
         
-        // Add content
-        if (currentElement.textContent.trim()) {
-          content += currentElement.outerHTML + '\n';
+        if (shouldStop) break;
+        
+        // Collect content with enhanced filtering
+        if (elementText.length > 0) {
+          // Skip very short text that might be formatting artifacts
+          if (elementText.length > 2 || tagName.match(/^(p|div|li|td|th|ul|ol|table|blockquote)$/)) {
+            contentElements.push(currentElement);
+          }
         }
         
         currentElement = currentElement.nextElementSibling;
       }
+      
+      // Second pass: process collected elements to build structured content
+      let inList = false;
+      let listItems = [];
+      
+      for (const element of contentElements) {
+        const tagName = element.tagName.toLowerCase();
+        const elementHTML = element.outerHTML;
+        
+        // Handle lists specially to preserve structure
+        if (tagName === 'li') {
+          if (!inList) {
+            inList = true;
+            listItems = [];
+          }
+          listItems.push(element.innerHTML);
+        } else {
+          // If we were in a list, close it first
+          if (inList) {
+            content += '<ul>\n';
+            listItems.forEach(item => {
+              content += `<li>${item}</li>\n`;
+            });
+            content += '</ul>\n';
+            inList = false;
+            listItems = [];
+          }
+          
+          // Add regular content with preserved formatting
+          if (tagName === 'table') {
+            // Preserve tables completely
+            content += elementHTML + '\n';
+          } else if (tagName.match(/^(p|div|blockquote|pre)$/)) {
+            // Preserve paragraph structure
+            content += elementHTML + '\n';
+          } else if (tagName.match(/^h[1-6]$/)) {
+            // Convert headings to sub-headings
+            const level = Math.min(parseInt(tagName.charAt(1)) + 1, 6);
+            content += `<h${level}>${element.innerHTML}</h${level}>\n`;
+          } else if (element.textContent.trim().length > 0) {
+            // Wrap other content in paragraphs
+            content += `<p>${element.innerHTML}</p>\n`;
+          }
+        }
+      }
+      
+      // Close any remaining list
+      if (inList) {
+        content += '<ul>\n';
+        listItems.forEach(item => {
+          content += `<li>${item}</li>\n`;
+        });
+        content += '</ul>\n';
+      }
     }
     
-    const extractedContent = content.trim();
+    // Clean up and validate extracted content
+    let extractedContent = content.trim();
+    
+    // Remove empty paragraphs and clean up formatting
+    extractedContent = extractedContent
+      .replace(/<p>\s*<\/p>/g, '') // Remove empty paragraphs
+      .replace(/<p>\s*(&nbsp;|\s)*\s*<\/p>/g, '') // Remove paragraphs with only spaces/nbsp
+      .replace(/\n\s*\n/g, '\n') // Clean up excessive newlines
+      .replace(/<([^>]+)>\s*<\/\1>/g, '') // Remove empty tags
+      .trim();
+    
     console.log(`Extracted ${extractedContent.length} characters for "${sectionName}"`);
     
-    return extractedContent || `<p><em>Section "${sectionName}" was found but contains no content.</em></p>`;
+    // Validate content quality
+    if (!extractedContent) {
+      return `<p><em>No content found for "${sectionName}". Please check if the section exists in the document.</em></p>`;
+    }
+    
+    // Check if content is mostly empty or just formatting
+    const textContent = extractedContent.replace(/<[^>]*>/g, '').trim();
+    if (textContent.length < 10) {
+      return `<p><em>Minimal content found for "${sectionName}": ${textContent || 'Empty section'}</em></p>`;
+    }
+    
+    return extractedContent;
   };
 
   // Create the new document structure matching the expected format
@@ -1977,10 +2440,63 @@ const createDocumentFromWordContent = (wordContent, sections, docType, docTitle,
       id: (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2),
       version: 'v1.0',
       createdAt: new Date().toISOString(),
-      sections: sections.map(sectionName => ({
-        key: sectionName,
-        text: extractSectionContent(sectionName)
-      }))
+      sections: (() => {
+        // First attempt: Smart section extraction
+        const extractedSections = sections.map(sectionName => {
+          // Try enhanced extraction first, fallback to original method
+          let content = extractSectionContentEnhanced(wordContent, sectionName, sections);
+          
+          // If enhanced extraction didn't find much, try original method
+          if (content.includes('<em>') || content.replace(/<[^>]*>/g, '').trim().length < 20) {
+            console.log(`Enhanced extraction found minimal content for "${sectionName}", trying original method...`);
+            const fallbackContent = extractSectionContent(sectionName);
+            
+            // Use whichever method found more substantial content
+            const enhancedTextLength = content.replace(/<[^>]*>/g, '').trim().length;
+            const fallbackTextLength = fallbackContent.replace(/<[^>]*>/g, '').trim().length;
+            
+            if (fallbackTextLength > enhancedTextLength) {
+              content = fallbackContent;
+              console.log(`Using original extraction method for "${sectionName}"`);
+            }
+          }
+          
+          return {
+            key: sectionName,
+            text: content
+          };
+        });
+        
+        // Check if we extracted sufficient content overall
+        const totalExtractedText = extractedSections
+          .map(section => section.text.replace(/<[^>]*>/g, '').trim())
+          .join(' ');
+        
+        // Get original document text for comparison
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(wordContent, 'text/html');
+        const originalText = doc.body?.textContent?.trim() || '';
+        
+        console.log(`Extracted ${totalExtractedText.length} characters from ${originalText.length} original characters`);
+        
+        // If we captured less than 30% of the original content, use backup method
+        if (originalText.length > 100 && totalExtractedText.length < originalText.length * 0.3) {
+          console.log('Section extraction captured insufficient content, using backup structural extraction');
+          return extractAllContentByStructure(wordContent, sections);
+        }
+        
+        // If most sections are empty or contain error messages, use backup method
+        const emptyOrErrorSections = extractedSections.filter(section => 
+          section.text.includes('<em>') || section.text.replace(/<[^>]*>/g, '').trim().length < 20
+        );
+        
+        if (emptyOrErrorSections.length > sections.length * 0.7) {
+          console.log('Too many sections have minimal content, using backup structural extraction');
+          return extractAllContentByStructure(wordContent, sections);
+        }
+        
+        return extractedSections;
+      })()
     }],
     comments: []
   };
@@ -2000,11 +2516,58 @@ export default function App(){
     try {
       const mammoth = await import('mammoth');
       const arrayBuffer = await file.arrayBuffer();
-      const result = await mammoth.convertToHtml({ arrayBuffer });
       
-      // Store the uploaded content and show section definer
+      // Enhanced mammoth configuration to preserve more formatting
+      const options = {
+        arrayBuffer,
+        convertImage: mammoth.images.imgElement(function(image) {
+          return image.read("base64").then(function(imageBuffer) {
+            return {
+              src: "data:" + image.contentType + ";base64," + imageBuffer
+            };
+          });
+        }),
+        styleMap: [
+          "p[style-name='Heading 1'] => h1:fresh",
+          "p[style-name='Heading 2'] => h2:fresh", 
+          "p[style-name='Heading 3'] => h3:fresh",
+          "p[style-name='Heading 4'] => h4:fresh",
+          "p[style-name='Heading 5'] => h5:fresh",
+          "p[style-name='Heading 6'] => h6:fresh",
+          "p[style-name='Title'] => h1.title:fresh",
+          "p[style-name='Subtitle'] => h2.subtitle:fresh",
+          "r[style-name='Strong'] => strong",
+          "r[style-name='Emphasis'] => em",
+          "p[style-name='List Paragraph'] => p.list-paragraph",
+          "p[style-name='Quote'] => blockquote > p:fresh",
+          "r[style-name='Code'] => code",
+          "p[style-name='Code'] => pre > code:fresh",
+          "table => table.word-table",
+          "tr => tr",
+          "td => td",
+          "th => th"
+        ],
+        includeDefaultStyleMap: true,
+        ignoreEmptyParagraphs: false,
+        convertImage: mammoth.images.dataUri
+      };
+      
+      const result = await mammoth.convertToHtml(options);
+      
+      // Log conversion warnings if any
+      if (result.messages && result.messages.length > 0) {
+        console.log('Mammoth conversion messages:', result.messages);
+      }
+      
+      // Auto-detect sections from the Word content
+      const detectedSections = detectSectionsFromWordContent(result.value);
+      console.log('Auto-detected sections:', detectedSections);
+      console.log('Converted HTML preview:', result.value.substring(0, 500) + '...');
+      
+      // Store the uploaded content and detected sections
       setUploadedWordContent(result.value);
       setUploadedFileName(file.name);
+      setDetectedSections(detectedSections);
       setShowSectionDefiner(true);
       
     } catch (error) {
@@ -3174,6 +3737,7 @@ export default function App(){
   const [showSectionDefiner, setShowSectionDefiner] = useState(false)
   const [uploadedWordContent, setUploadedWordContent] = useState(null)
   const [uploadedFileName, setUploadedFileName] = useState('')
+  const [detectedSections, setDetectedSections] = useState([])
   const [showWordView, setShowWordView] = useState(false)
   const [wordViewDoc, setWordViewDoc] = useState(null)
 
@@ -3189,6 +3753,10 @@ export default function App(){
     window.hasHTMLTables = hasHTMLTables;
     window.parseHTMLTables = parseHTMLTables;
     window.convertTablesToText = convertTablesToText;
+    window.detectSectionsFromWordContent = detectSectionsFromWordContent;
+    window.createDocumentFromWordContent = createDocumentFromWordContent;
+    window.extractSectionContentEnhanced = extractSectionContentEnhanced;
+    window.extractAllContentByStructure = extractAllContentByStructure;
     
     console.log('Debug functions available in console:');
     console.log('- testWordExportLibraries() - Test docx library');
@@ -3198,6 +3766,10 @@ export default function App(){
     console.log('- hasHTMLTables(htmlContent) - Check if content has tables');
     console.log('- parseHTMLTables(htmlContent) - Parse HTML tables');
     console.log('- convertTablesToText(htmlContent) - Convert tables to text format');
+    console.log('- detectSectionsFromWordContent(htmlContent) - Auto-detect sections');
+    console.log('- createDocumentFromWordContent(content, sections, type, title) - Create document from Word content');
+    console.log('- extractSectionContentEnhanced(content, section, allSections) - Enhanced section extraction');
+    console.log('- extractAllContentByStructure(content, sections) - Backup structural extraction');
   },[])
   useEffect(()=> save(docs, audit), [docs, audit])
 
@@ -3569,10 +4141,12 @@ export default function App(){
         <SectionDefinerPanel
           wordContent={uploadedWordContent}
           fileName={uploadedFileName}
+          detectedSections={detectedSections}
           onClose={() => {
             setShowSectionDefiner(false);
             setUploadedWordContent(null);
             setUploadedFileName('');
+            setDetectedSections([]);
           }}
           onCreateDocument={(sections, docType, docTitle, docStatus) => {
             try {
