@@ -1517,6 +1517,234 @@ function ComparativeTableWithSelection({
     </div>
   )
 }
+// Word Document View Component for Active and Archived Documents
+function WordDocumentView({ doc, onClose }) {
+  const latestVersion = doc.versions[doc.versions.length - 1];
+  const sections = latestVersion?.sections || [];
+  
+  // Word document styling
+  const documentStyle = {
+    fontFamily: 'Times New Roman, serif',
+    fontSize: '12pt',
+    lineHeight: '1.5',
+    color: '#000000',
+    backgroundColor: '#ffffff',
+    maxWidth: '8.5in',
+    margin: '1in auto',
+    padding: '1in',
+    minHeight: '11in',
+    boxShadow: '0 0 20px rgba(0,0,0,0.1)',
+    border: '1px solid #e0e0e0',
+    position: 'relative'
+  };
+
+  const headerStyle = {
+    textAlign: 'center',
+    marginBottom: '0.5in',
+    borderBottom: '2px solid #000',
+    paddingBottom: '0.25in'
+  };
+
+  const titleStyle = {
+    fontSize: '16pt',
+    fontWeight: 'bold',
+    marginBottom: '0.25in',
+    textTransform: 'uppercase'
+  };
+
+  const metaInfoStyle = {
+    fontSize: '11pt',
+    marginBottom: '0.1in',
+    display: 'flex',
+    justifyContent: 'space-between'
+  };
+
+  const sectionStyle = {
+    marginBottom: '0.5in',
+    pageBreakInside: 'avoid'
+  };
+
+  const sectionTitleStyle = {
+    fontSize: '14pt',
+    fontWeight: 'bold',
+    marginBottom: '0.25in',
+    borderBottom: '1px solid #000',
+    paddingBottom: '0.1in'
+  };
+
+  const watermarkStyle = {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%) rotate(-45deg)',
+    fontSize: '72pt',
+    color: 'rgba(255, 0, 0, 0.1)',
+    fontWeight: 'bold',
+    zIndex: 1,
+    pointerEvents: 'none',
+    userSelect: 'none'
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: '#f5f5f5',
+      zIndex: 1000,
+      overflow: 'auto',
+      padding: '20px'
+    }}>
+      {/* Toolbar */}
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: '#2b579a',
+        color: 'white',
+        padding: '10px 20px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        zIndex: 1001,
+        boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <h3 style={{ margin: 0, fontSize: '16px' }}>📄 Document Viewer - READ ONLY</h3>
+          <div style={{
+            backgroundColor: doc.status === 'Active' ? '#28a745' : '#6c757d',
+            color: 'white',
+            padding: '4px 12px',
+            borderRadius: '12px',
+            fontSize: '12px',
+            fontWeight: 'bold'
+          }}>
+            {doc.status === 'Active' ? '🟢 ACTIVE' : '📦 ARCHIVED'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <span style={{ fontSize: '14px', opacity: 0.9 }}>
+            🔒 Protected Document - No Editing Allowed
+          </span>
+          <button
+            onClick={onClose}
+            style={{
+              backgroundColor: '#dc3545',
+              color: 'white',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500'
+            }}
+          >
+            ✕ Close
+          </button>
+        </div>
+      </div>
+
+      {/* Document Content */}
+      <div style={{ paddingTop: '80px' }}>
+        <div style={documentStyle}>
+          {/* Watermark */}
+          <div style={watermarkStyle}>
+            {doc.status === 'Active' ? 'ACTIVE' : 'ARCHIVED'}
+          </div>
+
+          {/* Document Header */}
+          <div style={headerStyle}>
+            <div style={titleStyle}>{doc.title}</div>
+            <div style={metaInfoStyle}>
+              <span><strong>Document Code:</strong> {doc.code || 'N/A'}</span>
+              <span><strong>Type:</strong> {doc.type}</span>
+            </div>
+            <div style={metaInfoStyle}>
+              <span><strong>Department:</strong> {doc.department || 'N/A'}</span>
+              <span><strong>Status:</strong> {doc.status}</span>
+            </div>
+            <div style={metaInfoStyle}>
+              <span><strong>Version:</strong> {latestVersion?.version || 'v1.0'}</span>
+              <span><strong>Effective Date:</strong> {doc.effectiveDate || 'N/A'}</span>
+            </div>
+            <div style={metaInfoStyle}>
+              <span><strong>Created:</strong> {new Date(doc.createdAt).toLocaleDateString()}</span>
+              <span><strong>Last Updated:</strong> {new Date(doc.updatedAt).toLocaleDateString()}</span>
+            </div>
+          </div>
+
+          {/* Document Sections */}
+          {sections.map((section, index) => (
+            <div key={section.key} style={sectionStyle}>
+              <div style={sectionTitleStyle}>
+                {section.key}
+              </div>
+              <div 
+                style={{ 
+                  textAlign: 'justify',
+                  textIndent: '0.5in',
+                  fontSize: '12pt',
+                  lineHeight: '1.5'
+                }}
+                dangerouslySetInnerHTML={{ 
+                  __html: section.text || '<em style="color: #666; font-style: italic;">No content available for this section.</em>' 
+                }}
+              />
+            </div>
+          ))}
+
+          {/* Footer */}
+          <div style={{
+            marginTop: '1in',
+            paddingTop: '0.25in',
+            borderTop: '1px solid #000',
+            fontSize: '10pt',
+            textAlign: 'center',
+            color: '#666'
+          }}>
+            <div>Document generated on {new Date().toLocaleDateString()}</div>
+            <div style={{ marginTop: '0.1in' }}>
+              This is a read-only view of an {doc.status.toLowerCase()} document. 
+              No modifications are permitted.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Print Button */}
+      <div style={{
+        position: 'fixed',
+        bottom: '20px',
+        right: '20px',
+        zIndex: 1001
+      }}>
+        <button
+          onClick={() => window.print()}
+          style={{
+            backgroundColor: '#007bff',
+            color: 'white',
+            border: 'none',
+            padding: '12px 20px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '14px',
+            fontWeight: '500',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          🖨️ Print Document
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function download(filename, text){
   const a = document.createElement('a')
   const file = new Blob([text], { type: 'application/json' })
@@ -2109,6 +2337,8 @@ export default function App(){
   const [showSectionDefiner, setShowSectionDefiner] = useState(false)
   const [uploadedWordContent, setUploadedWordContent] = useState(null)
   const [uploadedFileName, setUploadedFileName] = useState('')
+  const [showWordView, setShowWordView] = useState(false)
+  const [wordViewDoc, setWordViewDoc] = useState(null)
 
   useEffect(()=>{
     const { docs, audit } = load()
@@ -2331,7 +2561,14 @@ export default function App(){
                 <tbody>
                   {filtered.map(d => (
                     <tr key={d.id} style={{cursor:'pointer'}}>
-                      <td onClick={()=>setSelected(d)}>
+                      <td onClick={()=>{
+                        if (d.status === 'Active' || d.status === 'Archived') {
+                          setWordViewDoc(d);
+                          setShowWordView(true);
+                        } else {
+                          setSelected(d);
+                        }
+                      }}>
                         <div style={{fontWeight:600}}>{d.title}</div>
                         <div className="muted">{d.code || '—'} • Created {new Date(d.createdAt).toLocaleDateString()}</div>
                       </td>
@@ -2341,11 +2578,53 @@ export default function App(){
                       <td className="muted">{new Date(d.updatedAt).toLocaleDateString()}</td>
                       <td style={{textAlign:'right'}}>
                         <div className="toolbar">
-                          <button className="btn ghost" onClick={()=>{setSelected(d)}}>Open</button>
-                          <button className="btn ghost" onClick={()=>{setSelected(d)}}>Edit</button>
-                          <button className="btn ghost" onClick={()=>{ setSelected(d); setShowCompare(true); setCompareTargetId(null) }}>Compare</button>
-                          <button className="btn ghost" onClick={()=>exportToWord(d)} title="Export as Word document">📥 Export</button>
-                          <button className="btn danger" onClick={()=>deleteDoc(d.id)}>Delete</button>
+                          {(d.status === 'Active' || d.status === 'Archived') ? (
+                            // Read-only actions for Active and Archived documents
+                            <>
+                              <button 
+                                className="btn ghost" 
+                                onClick={()=>{ setWordViewDoc(d); setShowWordView(true); }}
+                                title="View in Word format (Read-only)"
+                              >
+                                📄 View
+                              </button>
+                              <button className="btn ghost" onClick={()=>{ setSelected(d); setShowCompare(true); setCompareTargetId(null) }}>Compare</button>
+                              <button className="btn ghost" onClick={()=>exportToWord(d)} title="Export as Word document">📥 Export</button>
+                              {d.status === 'Active' && (
+                                <span style={{
+                                  padding: '4px 8px',
+                                  backgroundColor: '#28a745',
+                                  color: 'white',
+                                  borderRadius: '12px',
+                                  fontSize: '11px',
+                                  fontWeight: 'bold'
+                                }}>
+                                  🔒 PROTECTED
+                                </span>
+                              )}
+                              {d.status === 'Archived' && (
+                                <span style={{
+                                  padding: '4px 8px',
+                                  backgroundColor: '#6c757d',
+                                  color: 'white',
+                                  borderRadius: '12px',
+                                  fontSize: '11px',
+                                  fontWeight: 'bold'
+                                }}>
+                                  📦 ARCHIVED
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            // Full editing actions for Draft and Under Review documents
+                            <>
+                              <button className="btn ghost" onClick={()=>{setSelected(d)}}>Open</button>
+                              <button className="btn ghost" onClick={()=>{setSelected(d)}}>Edit</button>
+                              <button className="btn ghost" onClick={()=>{ setSelected(d); setShowCompare(true); setCompareTargetId(null) }}>Compare</button>
+                              <button className="btn ghost" onClick={()=>exportToWord(d)} title="Export as Word document">📥 Export</button>
+                              <button className="btn danger" onClick={()=>deleteDoc(d.id)}>Delete</button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -2464,6 +2743,17 @@ export default function App(){
               console.error('Error creating document:', error);
               alert('Error creating document: ' + error.message);
             }
+          }}
+        />
+      )}
+
+      {/* Word Document View for Active and Archived Documents */}
+      {showWordView && wordViewDoc && (
+        <WordDocumentView
+          doc={wordViewDoc}
+          onClose={() => {
+            setShowWordView(false);
+            setWordViewDoc(null);
           }}
         />
       )}
